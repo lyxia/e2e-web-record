@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { subscribePanelState } from './bridge';
 import type { PanelState, PanelTarget } from './types';
 
 function formatTarget(target: PanelTarget): string {
@@ -7,16 +8,36 @@ function formatTarget(target: PanelTarget): string {
 
 export function App() {
   const [state, setState] = useState<PanelState | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
-    window.updatePanel = setState;
+    return subscribePanelState(setState);
   }, []);
 
   if (!state) {
     return <div style={styles.shell}>Waiting for recorder.py...</div>;
   }
 
-  const canConfirm = state.currentRouteRemaining.length === 0;
+  const canConfirm = state.currentRouteRemaining.length === 0 && !confirming;
+
+  const handleConfirm = async () => {
+    const confirmRoute = window.confirmRoute;
+    if (!confirmRoute) {
+      setConfirmError('Recorder confirm handler is not ready.');
+      return;
+    }
+
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      await confirmRoute();
+    } catch (error) {
+      setConfirmError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConfirming(false);
+    }
+  };
 
   return (
     <div style={styles.shell}>
@@ -62,15 +83,16 @@ export function App() {
 
       <button
         disabled={!canConfirm}
-        onClick={() => window.confirmRoute()}
+        onClick={handleConfirm}
         style={{
           ...styles.button,
           opacity: canConfirm ? 1 : 0.45,
           cursor: canConfirm ? 'pointer' : 'not-allowed',
         }}
       >
-        Confirm current route
+        {confirming ? 'Confirming...' : 'Confirm current route'}
       </button>
+      {confirmError ? <div style={styles.error}>{confirmError}</div> : null}
     </div>
   );
 }
@@ -106,5 +128,9 @@ const styles: Record<string, React.CSSProperties> = {
     font: '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     marginTop: 14,
     padding: '8px 14px',
+  },
+  error: {
+    color: '#b3261e',
+    marginTop: 8,
   },
 };
