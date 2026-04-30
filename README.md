@@ -27,7 +27,38 @@
 - **质量门**：after-runtime 结束后检查 result、coverage、trace、video 和 expected targets，防止“提示词说录了，但证据不完整”。
 - **可视化报告**：`report/index.html` 把 baseline、after initial、after final 的图、视频、trace 放在同一路由下，方便人工快速复核。
 
+![react-component-upgrade skill 编排工作流](docs/assets/react-component-upgrade-workflow.png)
+
 ## 怎么安装
+
+### Requirements
+
+构建 skill 的机器需要：
+
+- Node.js：能运行当前业务项目和本仓库工具链的版本，建议使用项目现有 Node 版本。
+- Yarn：本仓库使用 Yarn workspace。
+- Git：用于准备 baseline worktree。
+
+运行组件升级覆盖验证的业务环境还需要：
+
+- Python：建议 Python 3.11；最低需要 Python 3.10，因为 recorder 使用了 3.10 的类型语法。
+- Playwright for Python：必须安装在 recorder 实际使用的那个 Python 解释器里。
+- Chromium browser：通过 Playwright 安装，供 recorder 打开页面、截图、录视频和采集 trace。
+- 业务项目依赖：baseline worktree 和升级后分支都需要能正常安装依赖并启动。
+- 可用登录态：推荐准备 Playwright persistent profile，让 baseline 和 after 验证复用同一套登录态。
+
+Python 和 Playwright 最容易踩坑：系统里可能有多个 Python。实际执行 recorder 的解释器要写进业务项目的 `coverage-state/manifest.json`：
+
+```json
+{
+  "runtime": {
+    "pythonPath": "/abs/path/to/python3",
+    "playwrightPackagePath": "/abs/path/to/site-packages/playwright"
+  }
+}
+```
+
+skill 会让 AI 用这两个字段做预检，避免 shell 默认 Python 没装 Playwright，或者导入了另一套 Playwright。
 
 先在本仓库构建 skill 产物：
 
@@ -93,7 +124,7 @@ baseline 版本是 1.1.42，升级后版本是当前分支。
 - 业务访问入口 URL，尤其是需要通过主应用或 qiankun 容器访问时。
 - 本地启动方式，例如 `yarn start`、端口、代理地址。
 - 登录态或 Playwright profile 是否已有。
-- 如果 Python/Playwright 环境特殊，告诉它应该使用哪个 Python。
+- Python 路径，以及这个 Python 对应的 Playwright package 路径。
 
 AI 会根据这些信息创建或修正 `coverage-state/manifest.json`，然后按 skill 内部流程执行。
 
