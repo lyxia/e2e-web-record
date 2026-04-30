@@ -4,9 +4,11 @@ import pytest
 
 from recorder import dry_run
 from recorder import resolve_panel_html_arg
+from recorder import validate_runtime_python_environment
 from runner import _read_marks
 from runner import _runtime_state_baseline
 from runner import _runtime_state_done
+from runner import _capture_route_screenshot
 from runner import merge_route_seen_target_ids
 from runner import build_window_args
 from runner import route_confirmed_target_ids
@@ -31,6 +33,14 @@ class FakePage(FakeFrame):
     def __init__(self, marks=None, frames=None):
         super().__init__(marks)
         self.frames = frames or []
+
+
+class FakeScreenshotPage:
+    async def screenshot(self, *, path, full_page):
+        self.path = path
+        self.full_page = full_page
+        with open(path, "wb") as handle:
+            handle.write(b"png")
 
 
 def test_dry_run_writes_initial_runtime_state(tmp_path):
@@ -174,6 +184,18 @@ async def test_read_marks_collects_markers_from_all_frames():
     assert await _read_marks(page) == ["top", "child-a", "child-b"]
 
 
+@pytest.mark.asyncio
+async def test_capture_route_screenshot_uses_stable_name_under_screenshots(tmp_path):
+    page = FakeScreenshotPage()
+
+    screenshot_path = await _capture_route_screenshot(page, tmp_path, "route-confirm")
+
+    assert screenshot_path == tmp_path / "screenshots" / "route-confirm.png"
+    assert screenshot_path.exists()
+    assert page.path == str(screenshot_path)
+    assert page.full_page is True
+
+
 def test_resolve_panel_html_arg_returns_absolute_path_when_file_exists(tmp_path):
     panel = tmp_path / "panel" / "index.html"
     panel.parent.mkdir(parents=True)
@@ -191,3 +213,10 @@ def test_resolve_panel_html_arg_errors_when_path_does_not_exist(tmp_path):
     missing = tmp_path / "panel" / "nope.html"
     with pytest.raises(SystemExit):
         resolve_panel_html_arg(str(missing))
+
+
+def test_validate_runtime_python_environment_rejects_wrong_python_path():
+    manifest = {"runtime": {"pythonPath": "/definitely/not/current/python"}}
+
+    with pytest.raises(SystemExit, match="manifest.runtime.pythonPath"):
+        validate_runtime_python_environment(manifest)

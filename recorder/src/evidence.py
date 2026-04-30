@@ -8,6 +8,7 @@ full artifact set under `<state-dir>/runs/baseline-<version>/routes/<route-id>/`
 - console.json / network.json / errors.json
 - screenshots/   (copies of the screenshot files captured during the route)
 - aria-snapshots/
+- trace.zip
 
 Action timeline events reference event ids; the full event payloads live in
 `console.json`/`network.json`/`errors.json` so that recorded action windows
@@ -60,6 +61,7 @@ def write_route_evidence(
     skipped_reason=None,
     screenshot_files=None,
     aria_snapshot_files=None,
+    trace_file=None,
 ):
     state_dir = Path(state_dir)
     route_id = route["routeId"]
@@ -80,6 +82,7 @@ def write_route_evidence(
         "forceConfirmReason": force_confirm_reason,
         "skipped": bool(skipped),
         "skippedReason": skipped_reason,
+        "trace": "trace.zip" if trace_file else None,
         "reviewStatus": _review_status(remaining_target_ids, force_confirm_reason, skipped),
     }
     atomic_write_json(route_dir / "coverage.json", coverage)
@@ -90,6 +93,7 @@ def write_route_evidence(
 
     _copy_files(screenshot_files, route_dir / "screenshots")
     _copy_files(aria_snapshot_files, route_dir / "aria-snapshots")
+    _copy_trace(trace_file, route_dir / "trace.zip")
     return route_dir
 
 
@@ -100,6 +104,15 @@ def _copy_files(files, target_dir):
         if not src_path.exists():
             continue
         shutil.copy2(src_path, target_dir / src_path.name)
+
+
+def _copy_trace(trace_file, target):
+    if not trace_file:
+        return
+    src_path = Path(trace_file)
+    if not src_path.exists():
+        return
+    shutil.copy2(src_path, target)
 
 
 def _review_status(remaining_target_ids, force_confirm_reason, skipped):

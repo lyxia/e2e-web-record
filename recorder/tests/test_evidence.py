@@ -25,8 +25,10 @@ def test_write_route_evidence_writes_full_artifact_set(tmp_path):
     route = _make_route()
     screenshot = tmp_path / "tmp" / "screenshots" / "a1.png"
     aria = tmp_path / "tmp" / "aria-snapshots" / "a1.yml"
+    trace = tmp_path / "tmp" / "traces" / "course-center.zip"
     _ensure(screenshot)
     _ensure(aria)
+    _ensure(trace)
 
     target_contexts = {
         "src/A.tsx#Modal#L8#C1": {
@@ -67,6 +69,7 @@ def test_write_route_evidence_writes_full_artifact_set(tmp_path):
         force_confirm_reason=None,
         screenshot_files=[str(screenshot)],
         aria_snapshot_files=[str(aria)],
+        trace_file=str(trace),
     )
 
     route_dir = tmp_path / "runs" / "baseline-1.0.0" / "routes" / "course-center"
@@ -75,6 +78,7 @@ def test_write_route_evidence_writes_full_artifact_set(tmp_path):
     assert coverage["remainingTargetIds"] == ["src/A.tsx#Drawer#L20#C2"]
     assert "src/A.tsx#Modal#L8#C1" in coverage["targetContexts"]
     assert coverage["operatorNote"] == "ok"
+    assert coverage["trace"] == "trace.zip"
 
     interaction = json.loads((route_dir / "interaction-context.json").read_text(encoding="utf-8"))
     assert interaction["actions"][0]["actionId"] == "a1"
@@ -88,6 +92,7 @@ def test_write_route_evidence_writes_full_artifact_set(tmp_path):
 
     assert (route_dir / "screenshots" / "a1.png").exists()
     assert (route_dir / "aria-snapshots" / "a1.yml").exists()
+    assert (route_dir / "trace.zip").exists()
 
 
 def test_write_route_evidence_records_force_confirm_reason(tmp_path):

@@ -84,7 +84,8 @@ The main agent gives you one entry from `after-runtime-plan.json`.
 
    Each directory mirrors the baseline layout (`coverage.json`,
    `interaction-context.json`, `console.json`, `network.json`, `errors.json`,
-   `screenshots/`, `aria-snapshots/`).
+   `screenshots/`, `aria-snapshots/`, `trace.zip`) and additionally includes
+   `video.webm` for after-runtime replay review.
 4. For each fix attempt, append an entry to `routeDir/fixes.json`:
 
    ```json

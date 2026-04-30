@@ -161,6 +161,7 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
     aria_snapshot_files: list = []
     last_known_actions: list = []
     next_event_id = 1
+    current_trace_file = None
 
     artifact_dir = state_dir / "runs" / f"baseline-{baseline_version}" / "tmp"
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -255,9 +256,31 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
                 aria_snapshot=str(aria_path) if aria_path else "",
             )
 
+        async def _start_route_trace(route):
+            try:
+                await ctx_app.tracing.stop()
+            except Exception:
+                pass
+            try:
+                await ctx_app.tracing.start(screenshots=True, snapshots=True, sources=True)
+            except Exception:
+                return None
+            return artifact_dir / "traces" / f"{route['routeId']}.zip"
+
+        async def _stop_route_trace(trace_path):
+            if not trace_path:
+                return None
+            trace_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                await ctx_app.tracing.stop(path=str(trace_path))
+            except Exception:
+                return None
+            return trace_path
+
         async def on_confirm(reason=None):
             nonlocal cur_idx, done, evidence_idx, route_seen_target_ids, target_contexts
             nonlocal console_events, network_events, error_events, screenshot_files, aria_snapshot_files
+            nonlocal current_trace_file
             if done or cur_idx >= len(selected_routes):
                 return
 
@@ -284,6 +307,10 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
                 network_events,
                 error_events,
             )
+            route_screenshot = await _capture_route_screenshot(page_app, artifact_dir, "route-confirm")
+            if route_screenshot:
+                screenshot_files.append(str(route_screenshot))
+            trace_file = await _stop_route_trace(current_trace_file)
 
             write_route_evidence(
                 state_dir=state_dir,
@@ -300,6 +327,7 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
                 force_confirm_reason=reason if remaining else None,
                 screenshot_files=screenshot_files,
                 aria_snapshot_files=aria_snapshot_files,
+                trace_file=str(trace_file) if trace_file else None,
             )
 
             evidence_idx += 1
@@ -311,6 +339,7 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
             error_events = []
             screenshot_files = []
             aria_snapshot_files = []
+            current_trace_file = None
             try:
                 await page_app.evaluate("window.__coverageActionTimeline = []")
             except Exception:
@@ -340,9 +369,10 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
                 return
 
             await goto_route(page_app, selected_routes[cur_idx]["url"])
+            current_trace_file = await _start_route_trace(selected_routes[cur_idx])
 
         async def on_skip(reason=None):
-            nonlocal cur_idx, done, route_seen_target_ids
+            nonlocal cur_idx, done, route_seen_target_ids, current_trace_file
             if done or cur_idx >= len(selected_routes):
                 return
 
@@ -354,6 +384,9 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
             route_id = route["routeId"]
             skipped_route_ids.add(route_id)
             skipped_route_reasons[route_id] = reason_text
+            route_screenshot = await _capture_route_screenshot(page_app, artifact_dir, "route-skip")
+            route_screenshot_files = [str(route_screenshot)] if route_screenshot else []
+            trace_file = await _stop_route_trace(current_trace_file)
 
             write_route_evidence(
                 state_dir=state_dir,
@@ -369,10 +402,13 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
                 route_note=reason_text,
                 skipped=True,
                 skipped_reason=reason_text,
+                screenshot_files=route_screenshot_files,
+                trace_file=str(trace_file) if trace_file else None,
             )
 
             cur_idx += 1
             route_seen_target_ids = set()
+            current_trace_file = None
             if cur_idx >= len(selected_routes):
                 done = True
                 panel_state = compute_panel_state(
@@ -397,11 +433,13 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
                 return
 
             await goto_route(page_app, selected_routes[cur_idx]["url"])
+            current_trace_file = await _start_route_trace(selected_routes[cur_idx])
 
         await page_panel.expose_function("confirmRoute", on_confirm)
         await page_panel.expose_function("skipRoute", on_skip)
         await page_panel.goto(panel_html.resolve().as_uri())
         await goto_route(page_app, selected_routes[cur_idx]["url"])
+        current_trace_file = await _start_route_trace(selected_routes[cur_idx])
 
         try:
             while not done:
@@ -487,6 +525,17 @@ async def _read_marks(page):
             seen.add(mark)
             unique_marks.append(mark)
     return unique_marks
+
+
+async def _capture_route_screenshot(page, artifact_dir: Path, name: str):
+    screenshot_path = artifact_dir / "screenshots" / f"{name}.png"
+    screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        await page.screenshot(path=str(screenshot_path), full_page=True)
+    except Exception:
+        return None
+    return screenshot_path
+
 
 def route_confirmed_target_ids(route, detected_target_ids):
     route_target_ids = set(route.get("targetIds", []))

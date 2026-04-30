@@ -80,6 +80,39 @@ def resolve_panel_html_arg(value):
     return panel_html
 
 
+def validate_runtime_python_environment(manifest):
+    runtime = manifest.get("runtime", {})
+    expected_python = runtime.get("pythonPath")
+    if expected_python:
+        actual_python = Path(sys.executable).resolve()
+        expected_python_path = Path(expected_python).expanduser().resolve()
+        if actual_python != expected_python_path:
+            raise SystemExit(
+                "recorder.py: current Python does not match manifest.runtime.pythonPath\n"
+                f"  current:  {actual_python}\n"
+                f"  expected: {expected_python_path}\n"
+                "Run the recorder with manifest.runtime.pythonPath."
+            )
+
+    expected_playwright = runtime.get("playwrightPackagePath")
+    if expected_playwright:
+        try:
+            import playwright
+        except Exception as exc:
+            raise SystemExit(
+                "recorder.py: manifest.runtime.playwrightPackagePath is set, but Playwright "
+                f"cannot be imported by {sys.executable}: {exc}"
+            )
+        actual_playwright = Path(playwright.__file__).resolve()
+        expected_playwright_path = Path(expected_playwright).expanduser().resolve()
+        if expected_playwright_path not in [actual_playwright, *actual_playwright.parents]:
+            raise SystemExit(
+                "recorder.py: imported Playwright does not match manifest.runtime.playwrightPackagePath\n"
+                f"  current:  {actual_playwright}\n"
+                f"  expected: {expected_playwright_path}"
+            )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
@@ -97,6 +130,8 @@ def main(argv=None):
         dry_run(state_dir)
         return
 
+    manifest = read_json(state_dir / "manifest.json")
+    validate_runtime_python_environment(manifest)
     panel_html = resolve_panel_html_arg(args.panel_html)
     asyncio.run(run_recorder(state_dir, panel_html, start_route_id=args.route))
 

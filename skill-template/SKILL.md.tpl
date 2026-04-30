@@ -43,7 +43,9 @@ The state dir is `<after-project>/coverage-state/` by default.
     "devPort": 3033,
     "baseUrl": "https://example.test/app",
     "proxy": "http://127.0.0.1:8899",
-    "playwrightProfile": "coverage-state/.playwright-profile"
+    "playwrightProfile": "coverage-state/.playwright-profile",
+    "pythonPath": "/abs/path/to/python-with-playwright/bin/python3",
+    "playwrightPackagePath": "/abs/path/to/site-packages/playwright"
   }
 }
 ```
@@ -51,7 +53,11 @@ The state dir is `<after-project>/coverage-state/` by default.
 `runtime.targetPackages` is read by scan, the babel marker, and the recorder.
 `runtime.baseUrl` is the URL the operator opens in the browser; if the dev
 server runs on `127.0.0.1` and a proxy maps the business domain, set
-`runtime.proxy` to the proxy address.
+`runtime.proxy` to the proxy address. `runtime.pythonPath` is the exact Python
+interpreter used to start the recorder. `runtime.playwrightPackagePath` is the
+Playwright Python package directory imported by that interpreter; it is used as
+a preflight guard against accidentally launching the recorder with another
+Python on PATH.
 
 ### Baseline worktree setup
 
@@ -303,11 +309,13 @@ In a separate terminal:
 
 ```bash
 cd <after-project>
-python3 $SKILL_DIR/scripts/recorder/recorder.py \
+RECORDER_PYTHON="$(jq -r '.runtime.pythonPath // empty' coverage-state/manifest.json)"
+test -n "$RECORDER_PYTHON"
+"$RECORDER_PYTHON" $SKILL_DIR/scripts/recorder/recorder.py \
   --state-dir coverage-state \
   --panel-html $SKILL_DIR/scripts/panel/index.html
 # resume from a specific route after a crash:
-python3 $SKILL_DIR/scripts/recorder/recorder.py \
+"$RECORDER_PYTHON" $SKILL_DIR/scripts/recorder/recorder.py \
   --state-dir coverage-state \
   --panel-html $SKILL_DIR/scripts/panel/index.html \
   --route course-center
@@ -320,6 +328,8 @@ the panel location.
 The recorder reads the after project's manifest, opens two Chromium windows
 (business app + panel), and writes evidence under
 `<after-project>/coverage-state/runs/baseline-<version>/routes/<routeId>/`.
+Each route evidence directory includes `trace.zip` for Playwright trace
+review. Baseline does not record video.
 **Checkpoint** with the user once `runtime-state.json` reports `phase=done`.
 
 #### Step 4: stop the baseline dev server
@@ -351,6 +361,8 @@ For every route in `after-runtime-plan.json`, dispatch one subagent (see
 `runs/after/routes/<routeId>/` only. The main agent reviews each
 `result.json`, records commits in `progress.json.items.afterRuntime.routes.<id>`,
 and (if any) closes out shared-component questions.
+After-runtime evidence must include Playwright `trace.zip` and `video.webm`
+for each `initial/` and `final/` run.
 
 When every route in the plan is `passed` or accepted as `needs-decision`
 by the user, the main agent advances `progress.json`
