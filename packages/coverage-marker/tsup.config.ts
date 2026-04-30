@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: { index: 'src/index.ts', runtime: 'src/runtime.ts' },
+  entry: { index: 'src/index.ts', runtime: 'src/runtime.tsx' },
   format: ['cjs'],
   dts: true,
   clean: true,
