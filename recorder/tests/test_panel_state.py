@@ -62,8 +62,8 @@ def test_current_route_remaining_is_empty_when_current_route_target_detected():
     assert state["currentRouteRemaining"] == []
     assert state["currentRoutePath"] == "/p2"
     assert state["routeChecklist"] == [
-        {"path": "/p1", "confirmedCount": 2, "targetCount": 2},
-        {"path": "/p2", "confirmedCount": 0, "targetCount": 1},
+        {"path": "/p1", "confirmedCount": 2, "targetCount": 2, "confirmed": False, "skipped": False},
+        {"path": "/p2", "confirmedCount": 0, "targetCount": 1, "confirmed": False, "skipped": False},
     ]
 
 
@@ -105,3 +105,33 @@ def test_confirmed_total_ignores_unknown_marker_ids():
 
     assert state["confirmedTotal"] == 1
     assert state["routeChecklist"][0]["confirmedCount"] == 1
+
+
+def test_route_checklist_marks_skipped_routes():
+    state = compute_panel_state(
+        targets=TARGETS,
+        selected_routes=ROUTES,
+        current_route=ROUTES[1],
+        detected_target_ids=set(),
+        confirmed_target_ids=set(),
+        skipped_route_ids={"p1"},
+    )
+
+    assert state["routeChecklist"][0]["skipped"] is True
+    assert state["routeChecklist"][1]["skipped"] is False
+
+
+def test_route_checklist_marks_user_confirmed_routes_separately_from_coverage_count():
+    state = compute_panel_state(
+        targets=TARGETS,
+        selected_routes=ROUTES,
+        current_route=ROUTES[1],
+        detected_target_ids=set(),
+        confirmed_target_ids={"src/A.tsx#Widget#L4#C10"},
+        confirmed_route_ids={"p1"},
+    )
+
+    assert state["routeChecklist"][0]["confirmed"] is True
+    assert state["routeChecklist"][0]["confirmedCount"] == 1
+    assert state["routeChecklist"][0]["targetCount"] == 2
+    assert state["routeChecklist"][1]["confirmed"] is False

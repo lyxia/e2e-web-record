@@ -55,7 +55,7 @@ module.exports = {
   babel: {
     plugins: [
       ...(__coverageTargets
-        ? [[require.resolve('@odc/coverage-marker'), { targetPackages: __coverageTargets }]]
+        ? [[require('@odc/coverage-marker').default, { targetPackages: __coverageTargets }]]
         : []),
     ],
   },

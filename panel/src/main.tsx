@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import { App } from './App';
 import './bridge';
+import './global.css';
 import type { PanelState } from './types';
 
 ReactDOM.render(
@@ -24,5 +25,8 @@ if (import.meta.env.DEV) {
   setTimeout(() => window.updatePanel(mockState), 100);
   window.confirmRoute = async () => {
     console.log('confirmed (dev mock)');
+  };
+  window.skipRoute = async (reason: string) => {
+    console.log('skipped (dev mock)', reason);
   };
 }

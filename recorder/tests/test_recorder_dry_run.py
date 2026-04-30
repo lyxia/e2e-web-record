@@ -1,13 +1,36 @@
 import json
 
+import pytest
+
 from recorder import dry_run
 from recorder import resolve_panel_html
+from runner import _read_marks
+from runner import _runtime_state_baseline
+from runner import _runtime_state_done
+from runner import merge_route_seen_target_ids
 from runner import build_window_args
 from runner import route_confirmed_target_ids
 
 
 def write_json(path, value):
     path.write_text(json.dumps(value), encoding="utf-8")
+
+
+class FakeFrame:
+    def __init__(self, marks=None, error=None):
+        self.marks = marks or []
+        self.error = error
+
+    async def evaluate(self, _script):
+        if self.error:
+            raise self.error
+        return self.marks
+
+
+class FakePage(FakeFrame):
+    def __init__(self, marks=None, frames=None):
+        super().__init__(marks)
+        self.frames = frames or []
 
 
 def test_dry_run_writes_initial_runtime_state(tmp_path):
@@ -93,11 +116,62 @@ def test_confirm_filters_detected_markers_to_current_route_targets():
     assert route_confirmed_target_ids(route, ["layout-x", "route-a", "route-b"]) == ["route-a", "route-b"]
 
 
+def test_merge_route_seen_target_ids_keeps_unmounted_targets_seen():
+    route = {"targetIds": ["modal", "table", "other-route"]}
+    seen = {"modal"}
+
+    assert merge_route_seen_target_ids(route, seen, ["table"]) == {"modal", "table"}
+
+
 def test_build_window_args_positions_independent_chrome_windows():
     assert build_window_args(x=1100, y=0, width=520, height=900) == [
         "--window-position=1100,0",
         "--window-size=520,900",
     ]
+
+
+def test_runtime_state_records_skip_reasons():
+    panel_state = {
+        "totalRuntimeTargets": 0,
+        "confirmedTotal": 0,
+        "currentDetected": [],
+        "currentRouteRemaining": [],
+    }
+    route = {"routeId": "p1", "path": "/p1"}
+    skipped_route_ids = {"p1"}
+    skipped_route_reasons = {"p1": "no menu entry in business system"}
+
+    baseline = _runtime_state_baseline(
+        panel_state=panel_state,
+        route=route,
+        current_url="http://app.test/p1",
+        remaining_routes_count=1,
+        skipped_route_ids=skipped_route_ids,
+        skipped_route_reasons=skipped_route_reasons,
+    )
+    done = _runtime_state_done(
+        panel_state,
+        [],
+        skipped_route_ids=skipped_route_ids,
+        skipped_route_reasons=skipped_route_reasons,
+    )
+
+    assert baseline["skippedRouteReasons"] == skipped_route_reasons
+    assert done["skippedRouteReasons"] == skipped_route_reasons
+
+
+@pytest.mark.asyncio
+async def test_read_marks_collects_markers_from_all_frames():
+    page = FakePage(
+        marks=["top"],
+        frames=[
+            FakeFrame(["top", "child-a"]),
+            FakeFrame(error=Exception("cross-origin blocked")),
+            FakeFrame(["child-b"]),
+        ],
+    )
+
+    assert await _read_marks(page) == ["top", "child-a", "child-b"]
 
 
 def test_resolve_panel_html_finds_repo_panel_dist():

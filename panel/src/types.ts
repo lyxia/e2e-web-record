@@ -15,13 +15,16 @@ export interface PanelState {
     path: string;
     confirmedCount: number;
     targetCount: number;
+    confirmed?: boolean;
+    skipped?: boolean;
   }>;
 }
 
 declare global {
   interface Window {
     updatePanel?: (state: PanelState) => void;
-    confirmRoute?: () => Promise<void>;
+    confirmRoute?: (reason?: string) => Promise<void>;
+    skipRoute?: (reason: string) => Promise<void>;
   }
 }
 

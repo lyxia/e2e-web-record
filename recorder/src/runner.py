@@ -39,6 +39,9 @@ async def run_recorder(state_dir: Path, panel_html: Path):
     targets = read_json(state_dir / "coverage-targets.json").get("targets", [])
     selected_routes = read_json(state_dir / "route-checklist.json").get("selectedRoutes", [])
     confirmed_target_ids = set()
+    confirmed_route_ids = set()
+    skipped_route_ids = set()
+    skipped_route_reasons = {}
 
     if not selected_routes:
         panel_state = compute_panel_state(
@@ -47,8 +50,19 @@ async def run_recorder(state_dir: Path, panel_html: Path):
             current_route=None,
             detected_target_ids=set(),
             confirmed_target_ids=confirmed_target_ids,
+            confirmed_route_ids=confirmed_route_ids,
+            skipped_route_ids=skipped_route_ids,
         )
-        atomic_write_json(state_dir / "runtime-state.json", _runtime_state_done(panel_state, targets))
+        atomic_write_json(
+            state_dir / "runtime-state.json",
+            _runtime_state_done(
+                panel_state,
+                targets,
+                skipped_route_ids=skipped_route_ids,
+                skipped_route_reasons=skipped_route_reasons,
+                confirmed_route_ids=confirmed_route_ids,
+            ),
+        )
         return
 
     from playwright.async_api import async_playwright
@@ -80,6 +94,7 @@ async def run_recorder(state_dir: Path, panel_html: Path):
     cur_idx = 0
     evidence_idx = 1
     done = False
+    route_seen_target_ids = set()
 
     async with async_playwright() as playwright:
         ctx_app = await playwright.chromium.launch_persistent_context(profile, **app_launch_options)
@@ -88,15 +103,27 @@ async def run_recorder(state_dir: Path, panel_html: Path):
         page_app = ctx_app.pages[0] if ctx_app.pages else await ctx_app.new_page()
         page_panel = await ctx_panel.new_page()
 
-        async def on_confirm():
-            nonlocal cur_idx, done, evidence_idx
+        async def on_confirm(reason=None):
+            nonlocal cur_idx, done, evidence_idx, route_seen_target_ids
             if done or cur_idx >= len(selected_routes):
                 return
 
             route = selected_routes[cur_idx]
-            detected = await _read_marks(page_app)
+            route_seen_target_ids = merge_route_seen_target_ids(
+                route,
+                route_seen_target_ids,
+                await _read_marks(page_app),
+            )
+            detected = list(route_seen_target_ids)
             confirmed = route_confirmed_target_ids(route, detected)
             confirmed_target_ids.update(confirmed)
+            confirmed_route_ids.add(route["routeId"])
+            remaining = [
+                target_id
+                for target_id in route.get("targetIds", [])
+                if target_id not in set(confirmed)
+            ]
+            review_status = "visual-ok" if not remaining else "force-confirmed"
 
             baseline_version = manifest.get("baseline", {}).get("version", "unknown")
             ev_dir = state_dir / "runs" / f"baseline-{baseline_version}" / "pages" / route["routeId"]
@@ -112,13 +139,16 @@ async def run_recorder(state_dir: Path, panel_html: Path):
                     "routeId": route["routeId"],
                     "detectedTargetIds": detected,
                     "confirmedTargetIds": confirmed,
+                    "remainingTargetIds": remaining,
+                    "forceConfirmReason": reason,
                     "screenshot": "screenshot.png",
-                    "reviewStatus": "visual-ok",
+                    "reviewStatus": review_status,
                 },
             )
 
             evidence_idx += 1
             cur_idx += 1
+            route_seen_target_ids = set()
             if cur_idx >= len(selected_routes):
                 done = True
                 panel_state = compute_panel_state(
@@ -127,26 +157,83 @@ async def run_recorder(state_dir: Path, panel_html: Path):
                     current_route=None,
                     detected_target_ids=set(),
                     confirmed_target_ids=confirmed_target_ids,
+                    confirmed_route_ids=confirmed_route_ids,
+                    skipped_route_ids=skipped_route_ids,
                 )
-                atomic_write_json(state_dir / "runtime-state.json", _runtime_state_done(panel_state, targets))
+                atomic_write_json(
+                    state_dir / "runtime-state.json",
+                    _runtime_state_done(
+                        panel_state,
+                        targets,
+                        skipped_route_ids=skipped_route_ids,
+                        skipped_route_reasons=skipped_route_reasons,
+                        confirmed_route_ids=confirmed_route_ids,
+                    ),
+                )
                 return
 
-            await page_app.goto(selected_routes[cur_idx]["url"])
+            await goto_route(page_app, selected_routes[cur_idx]["url"])
+
+        async def on_skip(reason=None):
+            nonlocal cur_idx, done, route_seen_target_ids
+            if done or cur_idx >= len(selected_routes):
+                return
+
+            reason_text = str(reason or "").strip()
+            if not reason_text:
+                raise ValueError("Skip requires a reason.")
+
+            route_id = selected_routes[cur_idx]["routeId"]
+            skipped_route_ids.add(route_id)
+            skipped_route_reasons[route_id] = reason_text
+            cur_idx += 1
+            route_seen_target_ids = set()
+            if cur_idx >= len(selected_routes):
+                done = True
+                panel_state = compute_panel_state(
+                    targets=targets,
+                    selected_routes=selected_routes,
+                    current_route=None,
+                    detected_target_ids=set(),
+                    confirmed_target_ids=confirmed_target_ids,
+                    confirmed_route_ids=confirmed_route_ids,
+                    skipped_route_ids=skipped_route_ids,
+                )
+                atomic_write_json(
+                    state_dir / "runtime-state.json",
+                    _runtime_state_done(
+                        panel_state,
+                        targets,
+                        skipped_route_ids=skipped_route_ids,
+                        skipped_route_reasons=skipped_route_reasons,
+                        confirmed_route_ids=confirmed_route_ids,
+                    ),
+                )
+                return
+
+            await goto_route(page_app, selected_routes[cur_idx]["url"])
 
         await page_panel.expose_function("confirmRoute", on_confirm)
+        await page_panel.expose_function("skipRoute", on_skip)
         await page_panel.goto(panel_html.resolve().as_uri())
-        await page_app.goto(selected_routes[0]["url"])
+        await goto_route(page_app, selected_routes[0]["url"])
 
         try:
             while not done:
                 route = selected_routes[cur_idx]
-                detected = await _read_marks(page_app)
+                route_seen_target_ids = merge_route_seen_target_ids(
+                    route,
+                    route_seen_target_ids,
+                    await _read_marks(page_app),
+                )
                 panel_state = compute_panel_state(
                     targets=targets,
                     selected_routes=selected_routes,
                     current_route=route,
-                    detected_target_ids=set(detected),
+                    detected_target_ids=route_seen_target_ids,
                     confirmed_target_ids=confirmed_target_ids,
+                    confirmed_route_ids=confirmed_route_ids,
+                    skipped_route_ids=skipped_route_ids,
                 )
                 try:
                     await page_panel.evaluate("(s) => window.updatePanel && window.updatePanel(s)", panel_state)
@@ -159,6 +246,9 @@ async def run_recorder(state_dir: Path, panel_html: Path):
                         route=route,
                         current_url=page_app.url,
                         remaining_routes_count=len(selected_routes) - cur_idx,
+                        skipped_route_ids=skipped_route_ids,
+                        confirmed_route_ids=confirmed_route_ids,
+                        skipped_route_reasons=skipped_route_reasons,
                     ),
                 )
                 await page_app.wait_for_timeout(POLL_MS)
@@ -178,19 +268,50 @@ def build_window_args(*, x: int, y: int, width: int, height: int):
     return [f"--window-position={x},{y}", f"--window-size={width},{height}"]
 
 
-async def _read_marks(page):
-    try:
-        return await page.evaluate("Array.from(window.__coverageMark__ || [])")
-    except Exception:
-        return []
+async def goto_route(page, url: str):
+    return await page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
+
+async def _read_marks(page):
+    marks = []
+
+    for frame in [page, *getattr(page, "frames", [])]:
+        try:
+            frame_marks = await frame.evaluate("Array.from(window.__coverageMark__ || [])")
+        except Exception:
+            continue
+        marks.extend(frame_marks)
+
+    seen = set()
+    unique_marks = []
+    for mark in marks:
+        if mark not in seen:
+            seen.add(mark)
+            unique_marks.append(mark)
+    return unique_marks
 
 def route_confirmed_target_ids(route, detected_target_ids):
     route_target_ids = set(route.get("targetIds", []))
     return [target_id for target_id in detected_target_ids if target_id in route_target_ids]
 
 
-def _runtime_state_baseline(*, panel_state, route, current_url, remaining_routes_count):
+def merge_route_seen_target_ids(route, seen_target_ids, detected_target_ids):
+    route_target_ids = set(route.get("targetIds", []))
+    return set(seen_target_ids) | {
+        target_id for target_id in detected_target_ids if target_id in route_target_ids
+    }
+
+
+def _runtime_state_baseline(
+    *,
+    panel_state,
+    route,
+    current_url,
+    remaining_routes_count,
+    skipped_route_ids,
+    confirmed_route_ids=None,
+    skipped_route_reasons=None,
+):
     return {
         "schemaVersion": 1,
         "phase": "baseline",
@@ -203,11 +324,20 @@ def _runtime_state_baseline(*, panel_state, route, current_url, remaining_routes
         "confirmedTotal": panel_state["confirmedTotal"],
         "panelState": panel_state,
         "remainingRoutesCount": remaining_routes_count,
+        "confirmedRouteIds": sorted(confirmed_route_ids or set()),
+        "skippedRouteIds": sorted(skipped_route_ids),
+        "skippedRouteReasons": dict(skipped_route_reasons or {}),
         "lastUpdate": iso_now(),
     }
 
 
-def _runtime_state_done(panel_state, targets):
+def _runtime_state_done(
+    panel_state,
+    targets,
+    skipped_route_ids=None,
+    skipped_route_reasons=None,
+    confirmed_route_ids=None,
+):
     return {
         "schemaVersion": 1,
         "phase": "done",
@@ -220,5 +350,8 @@ def _runtime_state_done(panel_state, targets):
         "confirmedTotal": panel_state["confirmedTotal"],
         "panelState": panel_state,
         "remainingRoutesCount": 0,
+        "confirmedRouteIds": sorted(confirmed_route_ids or set()),
+        "skippedRouteIds": sorted(skipped_route_ids or set()),
+        "skippedRouteReasons": dict(skipped_route_reasons or {}),
         "lastUpdate": iso_now(),
     }

@@ -5,10 +5,14 @@ def compute_panel_state(
     current_route,
     detected_target_ids,
     confirmed_target_ids,
+    confirmed_route_ids=None,
+    skipped_route_ids=None,
 ):
     target_by_id = {target["targetId"]: target for target in targets}
     detected_ids = set(detected_target_ids)
     confirmed_ids = set(confirmed_target_ids) & set(target_by_id)
+    confirmed_routes = set(confirmed_route_ids or set())
+    skipped_ids = set(skipped_route_ids or set())
     route_target_ids = list(current_route.get("targetIds", [])) if current_route else []
 
     current_detected_ids = [
@@ -35,6 +39,8 @@ def compute_panel_state(
                 "path": route.get("path", ""),
                 "confirmedCount": sum(1 for target_id in route.get("targetIds", []) if target_id in confirmed_ids),
                 "targetCount": route.get("targetCount", len(route.get("targetIds", []))),
+                "confirmed": route.get("routeId") in confirmed_routes,
+                "skipped": route.get("routeId") in skipped_ids,
             }
             for route in selected_routes
         ],

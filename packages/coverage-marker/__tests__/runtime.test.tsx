@@ -5,11 +5,13 @@ import { __CoverageMark } from '../src/runtime';
 declare global {
   interface Window {
     __coverageMark__?: Set<string>;
+    __coverageMarkCounts__?: Map<string, number>;
   }
 }
 
 beforeEach(() => {
   delete window.__coverageMark__;
+  delete window.__coverageMarkCounts__;
 });
 
 const CoverageMark = __CoverageMark as React.ComponentType<{
@@ -52,4 +54,30 @@ test('keeps id while another instance with the same id remains mounted', () => {
   second.unmount();
 
   expect(window.__coverageMark__).toEqual(new Set());
+});
+
+test('mirrors id to document.defaultView for sandboxed windows', () => {
+  const realWindow = {} as Window;
+  const originalDefaultView = document.defaultView;
+  Object.defineProperty(document, 'defaultView', {
+    configurable: true,
+    value: realWindow,
+  });
+
+  try {
+    const { unmount } = render(
+      <CoverageMark id="src/x.tsx#Widget#L3">child</CoverageMark>,
+    );
+
+    expect(realWindow.__coverageMark__).toEqual(new Set(['src/x.tsx#Widget#L3']));
+
+    unmount();
+
+    expect(realWindow.__coverageMark__).toEqual(new Set());
+  } finally {
+    Object.defineProperty(document, 'defaultView', {
+      configurable: true,
+      value: originalDefaultView,
+    });
+  }
 });
