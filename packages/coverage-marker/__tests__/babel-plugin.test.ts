@@ -61,6 +61,39 @@ test('alias preserves importedName', () => {
   expect(code).toContain('<__CoverageMark id="src/x.tsx#Button#L3#C26">');
 });
 
+test('default import is wrapped using default importedName', () => {
+  const code = transform([
+    "import Widget from '@target/ui';",
+    '',
+    'export const App = () => <Widget />;',
+  ].join('\n'));
+
+  expect(code).toContain('<__CoverageMark id="src/x.tsx#default#L3#C26">');
+});
+
+test('namespace JSX is wrapped using namespace importedName', () => {
+  const code = transform([
+    "import * as UI from '@target/ui';",
+    '',
+    'export const App = () => <UI.Widget />;',
+  ].join('\n'));
+
+  expect(code).toContain('<__CoverageMark id="src/x.tsx#*#L3#C26">');
+});
+
+test('shadowed namespace import is not wrapped', () => {
+  const code = transform([
+    "import * as UI from '@target/ui';",
+    '',
+    'export const App = () => {',
+    '  const UI = { Widget: () => null };',
+    '  return <UI.Widget />;',
+    '};',
+  ].join('\n'));
+
+  expect(code).not.toContain('src/x.tsx#*#L5');
+});
+
 test('type-only import no-op', () => {
   const source = [
     "import type { Widget } from '@target/ui';",

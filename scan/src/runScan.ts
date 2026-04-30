@@ -90,7 +90,8 @@ export function runScan(options: RunScanOptions): RunScanSummary {
     },
     summary: {
       pageCount: routes.length,
-      targetCount: routeCoverage.reduce((count, route) => count + route.targetIds.length, 0),
+      targetCount: targets.length,
+      mappedTargetCount: new Set(routeCoverage.flatMap((route) => route.targetIds)).size,
     },
     pages: routeCoverage.map((route) => buildPage(route, targets, projectRoot, options.baseUrl)),
   });

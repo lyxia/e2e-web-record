@@ -82,7 +82,7 @@ describe('runScan', () => {
     expect(pages).toMatchObject({
       schemaVersion: 1,
       config: { baseUrl: 'http://x/' },
-      summary: { pageCount: 2, targetCount: 2 },
+      summary: { pageCount: 2, targetCount: 3, mappedTargetCount: 2 },
     });
     expect(pages.pages).toEqual([
       expect.objectContaining({

@@ -24,6 +24,32 @@ function jsxIdentifierName(name: BabelTypes.JSXElement['openingElement']['name']
   return name.type === 'JSXIdentifier' ? name.name : undefined;
 }
 
+function jsxRootIdentifierName(name: BabelTypes.JSXElement['openingElement']['name']): string | undefined {
+  if (name.type === 'JSXIdentifier') {
+    return name.name;
+  }
+
+  if (name.type === 'JSXMemberExpression') {
+    return jsxMemberRootIdentifierName(name.object);
+  }
+
+  return undefined;
+}
+
+function jsxMemberRootIdentifierName(
+  object: BabelTypes.JSXMemberExpression['object'],
+): string | undefined {
+  if (object.type === 'JSXIdentifier') {
+    return object.name;
+  }
+
+  if (object.type === 'JSXMemberExpression') {
+    return jsxMemberRootIdentifierName(object.object);
+  }
+
+  return undefined;
+}
+
 function isCoverageMarkElement(node: BabelTypes.JSXElement, runtimeLocalName: string) {
   return jsxIdentifierName(node.openingElement.name) === runtimeLocalName;
 }
@@ -81,6 +107,22 @@ export default function coverageMarkerPlugin({
             }
 
             for (const specifier of statementPath.node.specifiers) {
+              if (t.isImportDefaultSpecifier(specifier) && t.isIdentifier(specifier.local)) {
+                state.importedComponents.set(specifier.local.name, {
+                  importedName: 'default',
+                  binding: statementPath.scope.getBinding(specifier.local.name),
+                });
+                continue;
+              }
+
+              if (t.isImportNamespaceSpecifier(specifier) && t.isIdentifier(specifier.local)) {
+                state.importedComponents.set(specifier.local.name, {
+                  importedName: '*',
+                  binding: statementPath.scope.getBinding(specifier.local.name),
+                });
+                continue;
+              }
+
               if (
                 !t.isImportSpecifier(specifier) ||
                 specifier.importKind === 'type' ||
@@ -123,7 +165,7 @@ export default function coverageMarkerPlugin({
           return;
         }
 
-        const elementName = jsxIdentifierName(jsxPath.node.openingElement.name);
+        const elementName = jsxRootIdentifierName(jsxPath.node.openingElement.name);
         if (!elementName || elementName === state.runtimeLocalName) {
           return;
         }
