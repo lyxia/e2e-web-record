@@ -1,0 +1,40 @@
+{
+  "name": "@odc/coverage-marker",
+  "version": "0.1.0",
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./runtime": { "types": "./dist/runtime.d.ts", "default": "./dist/runtime.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "test":  "jest"
+  },
+  "peerDependencies": {
+    "react":       "^17.0.0 || ^18.0.0",
+    "@babel/core": "^7.0.0"
+  },
+  "devDependencies": {
+    "@babel/core":          "^7.28.0",
+    "@babel/preset-react":  "^7.27.0",
+    "@babel/preset-typescript": "^7.27.0",
+    "@types/babel__core":   "^7.20.5",
+    "@types/jest":          "^29.5.0",
+    "@types/react":         "^17.0.9",
+    "@testing-library/react": "^12.1.5",
+    "jest":                 "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "react":                "^17.0.2",
+    "react-dom":            "^17.0.2",
+    "ts-jest":              "^29.1.0",
+    "tsup":                 "^8.0.0",
+    "typescript":           "^4.6.3"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "jsdom",
+    "testMatch": ["**/__tests__/**/*.test.ts?(x)"]
+  }
+}
