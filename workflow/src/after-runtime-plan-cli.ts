@@ -1,6 +1,5 @@
 import { resolveStateDir } from './manifest';
 import { buildAfterRuntimePlan } from './afterRuntimePlan';
-import { loadOrCreateProgress, writeProgress, writeProgressSnapshot } from './state';
 
 interface CliArgs {
   stateDir?: string;
@@ -30,26 +29,10 @@ function readValue(argv: string[], index: number, name: string): string {
   return value;
 }
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
   const stateDir = resolveStateDir(args.stateDir);
   const plan = buildAfterRuntimePlan({ stateDir });
-
-  const progress = loadOrCreateProgress(stateDir, nowIso());
-  if (progress.currentPhase !== 'afterRuntime') {
-    progress.currentPhase = 'afterRuntime';
-    progress.resume = {
-      nextAction: 'run-after-runtime',
-      description: 'Execute after-runtime fixes per route from after-runtime-plan.json.',
-    };
-    progress.updatedAt = nowIso();
-    writeProgress(stateDir, progress);
-  }
-  writeProgressSnapshot(stateDir, 'afterRuntime', progress);
 
   process.stdout.write(
     `${JSON.stringify(

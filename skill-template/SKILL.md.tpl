@@ -145,9 +145,70 @@ The output line `Next action: <name>` decides which command to run next.
 ## Phases
 
 Linear order: `bootstrap → scan → apiDiff → build → baselineCoverage →
-afterRuntime → report`. The main agent updates `progress.json` after each
-phase via the corresponding CLI, which writes a
-`progress.<phase>.snapshot.json`.
+afterRuntime → report`.
+
+### Who advances `progress.json`?
+
+- **scan, apiDiff, report** are mechanical phases. Their CLIs do the work
+  and `markPhaseDone` themselves. The main agent only invokes them.
+- **build, baselineCoverage, afterRuntime** are orchestrated phases — they
+  involve subagent dispatching, the operator-driven recorder, and fix
+  loops. No CLI can decide they are done. The **main agent** advances
+  `progress.json` directly with a small JSON edit when the phase
+  completes. See "Phase transition cheat sheet" below for the exact
+  fields to set.
+
+### Phase transition cheat sheet
+
+For each orchestrated phase, write the same shape into
+`<state-dir>/progress.json`:
+
+```jsonc
+{
+  "currentPhase": "<next-phase>",
+  "phases": {
+    "<this-phase>": { "status": "done", "completedAt": "<iso>" }
+  },
+  "resume": {
+    "nextAction": "<next-action>",
+    "description": "<short>"
+  },
+  "updatedAt": "<iso>"
+}
+```
+
+| Just finished | `<this-phase>` | `<next-phase>` | `<next-action>` |
+|---------------|----------------|----------------|-----------------|
+| build green | `build` | `baselineCoverage` | `run-baseline-recorder` |
+| recorder reports `phase=done` | `baselineCoverage` | `afterRuntime` | `run-after-runtime` |
+| every after route has `result.json` accepted | `afterRuntime` | `report` | `run-report` |
+
+Practical jq one-liner (build → baselineCoverage):
+
+```bash
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+jq --arg now "$NOW" '
+  .currentPhase = "baselineCoverage"
+  | .phases.build = { status: "done", completedAt: $now }
+  | .resume = { nextAction: "run-baseline-recorder", description: "Run the baseline recorder; see SKILL.md baselineCoverage section." }
+  | .updatedAt = $now
+' coverage-state/progress.json > coverage-state/progress.json.tmp \
+  && mv coverage-state/progress.json.tmp coverage-state/progress.json
+```
+
+Substitute the row from the table above for baseline → afterRuntime and
+afterRuntime → report.
+
+After advancing, run `resume.js` to confirm the next action printed
+matches expectations.
+
+### Snapshots are optional
+
+The mechanical CLIs (`scan`, `api-diff`, `report`) write
+`progress.<phase>.snapshot.json` for audit. If you want the same audit
+trail for `build`, `baselineCoverage`, `afterRuntime`, copy
+`progress.json` to `progress.<phase>.snapshot.json` after the transition
+edit. Skipping the snapshot does not break resume.
 
 ### scan
 
@@ -185,11 +246,16 @@ have `node_modules/` populated.
 Swap to the after package version in the after project, run the project
 build, and dispatch the `build-fix` subagent (see `subagent-prompts.md`)
 for any failures. The subagent writes results into
-`build/attempts/<n>/result.json` but DOES NOT update progress; the main
-agent records the outcome.
+`build/attempts/<n>/result.json` but DOES NOT update progress.
 
-If a fix touches a shared component, the subagent emits `needs-decision`.
-**Checkpoint** with the user before continuing.
+When the build is green, the main agent SHOULD also write
+`build/build-fixes.md` aggregating each attempt's `result.json`
+(`patchedFiles`, `summary`) — `report.js` reads it later. Then advance
+`progress.json` per the cheat sheet (`build → baselineCoverage`).
+
+If any attempt is `needs-decision` (shared-component impact),
+**checkpoint** with the user before continuing — do not advance the
+phase.
 
 ### baselineCoverage (no subagent)
 
@@ -253,6 +319,11 @@ After baseline-coverage completes, stop the baseline dev server before
 moving to afterRuntime — afterRuntime starts a separate dev server in the
 after project on the same port.
 
+#### Step 5: advance progress.json
+
+The main agent advances `progress.json` (`baselineCoverage → afterRuntime`)
+per the cheat sheet above. The recorder never touches `progress.json`.
+
 ### afterRuntime
 
 Generate the plan, then dispatch the `after-runtime-route` subagent serially
@@ -260,6 +331,7 @@ per route. The after dev server runs **in the after project**, with the
 default `coverage-state` directory (no STATE_DIR override needed).
 
 ```bash
+# generate-only; the main agent owns phase advance
 node $SKILL_DIR/scripts/workflow/after-runtime-plan.js --state-dir coverage-state
 # in another terminal, in the after project:
 COVERAGE_MODE=1 BROWSER=none yarn start
@@ -268,9 +340,15 @@ COVERAGE_MODE=1 BROWSER=none yarn start
 For every route in `after-runtime-plan.json`, dispatch one subagent (see
 `subagent-prompts.md`). Each subagent writes into
 `runs/after/routes/<routeId>/` only. The main agent reviews each
-`result.json`, records commits, and updates `progress.json`.
+`result.json`, records commits in `progress.json.items.afterRuntime.routes.<id>`,
+and (if any) closes out shared-component questions.
 
-If any subagent emits `needs-decision`, **checkpoint** with the user.
+When every route in the plan is `passed` or accepted as `needs-decision`
+by the user, the main agent advances `progress.json`
+(`afterRuntime → report`) per the cheat sheet.
+
+If any subagent emits `needs-decision`, **checkpoint** with the user — do
+not advance the phase yourself.
 
 ### report
 
