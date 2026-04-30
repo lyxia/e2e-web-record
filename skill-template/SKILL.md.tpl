@@ -354,6 +354,10 @@ default `coverage-state` directory (no STATE_DIR override needed).
 node $SKILL_DIR/scripts/workflow/after-runtime-plan.js --state-dir coverage-state
 # in another terminal, in the after project:
 COVERAGE_MODE=1 BROWSER=none yarn start
+# fixed recorder for one route; repeat per route or pass multiple --route-id values
+python3 $SKILL_DIR/scripts/recorder/after_runtime_recorder.py \
+  --state-dir coverage-state \
+  --route-id <routeId>
 ```
 
 For every route in `after-runtime-plan.json`, dispatch one subagent (see
@@ -363,6 +367,10 @@ For every route in `after-runtime-plan.json`, dispatch one subagent (see
 and (if any) closes out shared-component questions.
 Pass each route entry's `url` through unchanged; subagents must open that
 business URL exactly and must not replace it with localhost or the dev port.
+The fixed after-runtime recorder owns Playwright context setup, trace/video
+capture, coverage collection, and evidence file layout. Subagents must not
+create or modify Playwright runner scripts. Route-specific interactions belong
+in `runs/after/routes/<routeId>/playbook.json`, consumed by the fixed runner.
 After-runtime evidence must include Playwright `trace.zip` and `video.webm`
 for each `initial/` and `final/` run.
 

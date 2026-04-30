@@ -84,7 +84,7 @@ function buildWorkflowScripts(): void {
 
 function buildRecorderScripts(): void {
   const recorderSrc = path.join(rootDir, "recorder", "src");
-  const files = ["recorder.py", "runner.py", "panel_state.py", "action_timeline.py", "evidence.py"];
+  const files = ["recorder.py", "runner.py", "panel_state.py", "action_timeline.py", "evidence.py", "after_runtime_recorder.py"];
   for (const file of files) {
     copyFile(path.join(recorderSrc, file), path.join(recorderDistDir, file));
   }

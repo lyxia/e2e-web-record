@@ -92,7 +92,14 @@ direct localhost/dev-port URLs are incomplete.
    `interaction-context.json`, `console.json`, `network.json`, `errors.json`,
    `screenshots/`, `aria-snapshots/`, `trace.zip`) and additionally includes
    `video.webm` for after-runtime replay review.
-4. For each fix attempt, append an entry to `routeDir/fixes.json`:
+4. Do not create or modify Playwright runner scripts. Use the fixed
+   `$SKILL_DIR/scripts/recorder/after_runtime_recorder.py` runner, which owns
+   browser context setup, trace/video capture, coverage collection, and
+   evidence layout. If interaction logic needs to change, write
+   `routeDir/playbook.json` and rerun the fixed runner. Supported playbook
+   step types are `click`, `select`, `wait`, `clickFirstRowText`, and
+   `clickTabs`; keep selectors/texts route-local.
+5. For each fix attempt, append an entry to `routeDir/fixes.json`:
 
    ```json
    {
@@ -107,13 +114,13 @@ direct localhost/dev-port URLs are incomplete.
    }
    ```
 
-5. Write `routeDir/result.json` with one of:
+6. Write `routeDir/result.json` with one of:
 
    - `{"status": "passed", "expectedTargetIds": [...], "missingTargetIds": []}`
    - `{"status": "failed", "missingTargetIds": [...]}`
    - `{"status": "needs-decision", "reason": "..."}` — escalate when a fix
      would touch shared components or other routes.
 
-6. Never write `progress.json`. Never write outside `routeDir`. Never commit.
+7. Never write `progress.json`. Never write outside `routeDir`. Never commit.
    The main agent will record commits in `progress.json` after reviewing
    `result.json`.

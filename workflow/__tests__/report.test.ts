@@ -39,7 +39,7 @@ function setup(): { stateDir: string } {
     JSON.stringify({
       schemaVersion: 1,
       generatedAt: '2026-04-30T00:00:00Z',
-      routes: [{ routeId: 'r1', routePath: '/r1', expectedTargetIds: ['t1', 't2'] }],
+      routes: [{ routeId: 'r1', routePath: '/r1', url: 'https://x/r1', expectedTargetIds: ['t1', 't2'] }],
       excluded: {
         skippedRoutes: [{ routeId: 'r2', reason: 'no menu entry' }],
         forcedOnlyTargetIds: [],
@@ -49,7 +49,7 @@ function setup(): { stateDir: string } {
   );
 
   const baselineDir = path.join(stateDir, 'runs', 'baseline-1.0.0', 'routes', 'r1');
-  fs.mkdirSync(baselineDir, { recursive: true });
+  fs.mkdirSync(path.join(baselineDir, 'screenshots'), { recursive: true });
   fs.writeFileSync(
     path.join(baselineDir, 'coverage.json'),
     JSON.stringify({
@@ -60,9 +60,18 @@ function setup(): { stateDir: string } {
       skipped: false,
     }),
   );
+  fs.writeFileSync(path.join(baselineDir, 'screenshots', 'route-confirm.png'), 'png');
+  fs.writeFileSync(path.join(baselineDir, 'trace.zip'), 'trace');
 
   const afterDir = path.join(stateDir, 'runs', 'after', 'routes', 'r1');
-  fs.mkdirSync(path.join(afterDir, 'final'), { recursive: true });
+  fs.mkdirSync(path.join(afterDir, 'initial', 'screenshots'), { recursive: true });
+  fs.mkdirSync(path.join(afterDir, 'final', 'screenshots'), { recursive: true });
+  fs.writeFileSync(path.join(afterDir, 'initial', 'screenshots', 'final.png'), 'png');
+  fs.writeFileSync(path.join(afterDir, 'initial', 'video.webm'), 'video');
+  fs.writeFileSync(path.join(afterDir, 'initial', 'trace.zip'), 'trace');
+  fs.writeFileSync(path.join(afterDir, 'final', 'screenshots', 'final.png'), 'png');
+  fs.writeFileSync(path.join(afterDir, 'final', 'video.webm'), 'video');
+  fs.writeFileSync(path.join(afterDir, 'final', 'trace.zip'), 'trace');
   fs.writeFileSync(
     path.join(afterDir, 'final', 'claims.json'),
     JSON.stringify({
@@ -92,6 +101,7 @@ describe('generateReport', () => {
     expect(summaryMd).toContain('demo-app');
     expect(summaryMd).toContain('confirmed');
     expect(summaryMd).toContain('r2');
+    expect(summaryMd).toContain('https://x/r2');
     expect(summaryMd).toContain('passed');
 
     const coverage = JSON.parse(
@@ -114,5 +124,27 @@ describe('generateReport', () => {
 
     expect(summary.confirmedTargetCount).toBe(2);
     expect(summary.afterPassed).toBe(1);
+  });
+
+  it('writes a visual html report with route evidence comparison', () => {
+    const { stateDir } = setup();
+    generateReport({ stateDir });
+
+    const html = fs.readFileSync(path.join(stateDir, 'report', 'index.html'), 'utf8');
+    expect(html).toContain('Upgrade Evidence Review');
+    expect(html).toContain('Baseline');
+    expect(html).toContain('After Initial');
+    expect(html).toContain('After Final');
+    expect(html).toContain('<th>URL</th>');
+    expect(html).toContain('runs/baseline-1.0.0/routes/r1/screenshots/route-confirm.png');
+    expect(html).toContain('runs/after/routes/r1/final/video.webm');
+    expect(html).toContain('runs/after/routes/r1/final/trace.zip');
+    expect(html).toContain('r1');
+    expect(html).toContain('https://x/r2');
+
+    const runtimeDiff = JSON.parse(
+      fs.readFileSync(path.join(stateDir, 'report', 'runtime-diff.json'), 'utf8'),
+    );
+    expect(runtimeDiff.claims[0].routeId).toBe('r1');
   });
 });
