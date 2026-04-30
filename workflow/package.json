@@ -1,0 +1,30 @@
+{
+  "name": "workflow",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "yarn build:resume && yarn build:run-scan && yarn build:api-diff && yarn build:after-runtime-plan && yarn build:report",
+    "build:resume": "esbuild src/resume.ts --bundle --platform=node --target=node16 --outfile=dist/resume.js",
+    "build:run-scan": "esbuild src/run-scan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/run-scan.js",
+    "build:api-diff": "esbuild src/api-diff-cli.ts --bundle --platform=node --target=node16 --outfile=dist/api-diff.js",
+    "build:after-runtime-plan": "esbuild src/after-runtime-plan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/after-runtime-plan.js",
+    "build:report": "esbuild src/report-cli.ts --bundle --platform=node --target=node16 --outfile=dist/report.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "scan": "0.0.0",
+    "typescript": "^4.6.3"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^16.18.126",
+    "esbuild": "^0.20.2",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.5"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.test.ts"]
+  }
+}

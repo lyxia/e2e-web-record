@@ -1,7 +1,7 @@
 {
   "name": "component-upgrade-coverage-recorder",
   "private": true,
-  "workspaces": ["packages/*", "scan", "panel"],
+  "workspaces": ["packages/*", "scan", "panel", "workflow"],
   "scripts": {
     "build:skill": "ts-node scripts/build-skill.ts",
     "test": "yarn workspaces run test"
