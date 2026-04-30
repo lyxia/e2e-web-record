@@ -63,6 +63,11 @@ The main agent gives you one entry from `after-runtime-plan.json`.
 - `stateDir`: absolute path to the coverage state directory.
 - `routeDir`: `<stateDir>/runs/after/routes/<routeId>` — your output home.
 - `maxFixAttempts`: integer (e.g. 5).
+- `devServerUrl`: the base URL of the **after** project's dev server
+  (running with COVERAGE_MODE=1). The main agent has already started it; do
+  not start your own. Open routes through this URL (typically the
+  `runtime.baseUrl` from manifest, behind a proxy that points to the after
+  dev port).
 
 ### Rules
 

@@ -9,11 +9,20 @@ This skill orchestrates a baseline-vs-after coverage workflow for a React
 component-library upgrade. The main agent runs the phases below in order and
 is the single writer of `<state-dir>/progress.json`.
 
+## Single Source of Truth
+
+There is **exactly one** coverage-state directory: the **after** project's
+`coverage-state/`. The baseline worktree never owns its own coverage-state;
+it only reads the after project's manifest at compile time via the
+`STATE_DIR` env var. Every CLI in this skill (resume / scan / api-diff /
+after-runtime-plan / report) and the recorder run against this same
+`<state-dir>`. Do not duplicate manifests across worktrees.
+
 ## Bootstrap
 
-The state dir is `<project-root>/coverage-state/` by default. Only the new
-state layout is supported — the legacy `e2e-xui-pro/` directory is not read
-or migrated.
+The state dir is `<after-project>/coverage-state/` by default.
+
+### manifest.json
 
 `<state-dir>/manifest.json` MUST contain:
 
@@ -22,7 +31,11 @@ or migrated.
   "schemaVersion": 1,
   "project": "demo-app",
   "library": "@example/ui",
-  "baseline": { "version": "1.0.0", "commit": "abc123", "worktreePath": "/abs/path/to/baseline-worktree" },
+  "baseline": {
+    "version": "1.0.0",
+    "commit": "abc123",
+    "worktreePath": "/abs/path/to/baseline-worktree"
+  },
   "after": { "version": "1.1.0", "branch": "feature/upgrade-ui" },
   "runtime": {
     "targetPackages": ["@example/ui"],
@@ -40,7 +53,30 @@ or migrated.
 server runs on `127.0.0.1` and a proxy maps the business domain, set
 `runtime.proxy` to the proxy address.
 
-Install once in the target project:
+### Baseline worktree setup
+
+The baseline worktree is the source tree at the **pre-upgrade** commit, with
+its own `node_modules` containing the **baseline** package version. It is
+needed so api-diff can read baseline `*.d.ts` files and so baseline-coverage
+can run a baseline dev server.
+
+```bash
+# from inside the after project
+git worktree add /abs/path/to/baseline-worktree <baseline-commit>
+( cd /abs/path/to/baseline-worktree && yarn install )
+```
+
+After this, `manifest.baseline.worktreePath` MUST point to the absolute path,
+and `<baseline-worktree>/node_modules/<package>` MUST exist with the baseline
+version.
+
+The baseline worktree intentionally does NOT receive a `coverage-state/`
+directory. See "Baseline dev server" below for how it reads the after
+project's manifest.
+
+### Install
+
+In the **after** project (one-off):
 
 ```bash
 yarn add -D @odc/coverage-marker@^{{coverageMarkerVersion}}
@@ -48,7 +84,11 @@ pip install playwright pytest
 playwright install chromium
 ```
 
-Wire the babel marker plugin in `craco.config.js`:
+### craco.config.js
+
+Wire the babel marker plugin so that **both the after project and the
+baseline worktree** can load the after project's manifest.json by setting
+`STATE_DIR` to an absolute path:
 
 ```js
 const fs = require('fs');
@@ -56,8 +96,11 @@ const path = require('path');
 
 function loadCoverageTargetPackages() {
   if (process.env.COVERAGE_MODE !== '1') return null;
-  const stateDir = process.env.STATE_DIR || 'coverage-state';
-  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, stateDir, 'manifest.json'), 'utf8'));
+  const envStateDir = process.env.STATE_DIR;
+  const stateDir = envStateDir
+    ? (path.isAbsolute(envStateDir) ? envStateDir : path.resolve(__dirname, envStateDir))
+    : path.join(__dirname, 'coverage-state');
+  const manifest = JSON.parse(fs.readFileSync(path.join(stateDir, 'manifest.json'), 'utf8'));
   const pkgs = manifest && manifest.runtime && manifest.runtime.targetPackages;
   if (!Array.isArray(pkgs) || pkgs.length === 0) {
     throw new Error('manifest.runtime.targetPackages must be a non-empty array');
@@ -77,6 +120,17 @@ module.exports = {
 };
 ```
 
+The `path.isAbsolute` branch is critical: `path.join(__dirname, '/abs')`
+silently produces `<__dirname>/abs`, which would mis-locate the manifest.
+With `path.resolve`, an absolute STATE_DIR is honoured as-is, and a relative
+STATE_DIR is resolved against `__dirname` (so the same craco.config.js works
+in both worktrees). If your existing craco uses `path.join(__dirname,
+process.env.STATE_DIR || 'coverage-state', ...)`, update it to the snippet
+above before running baseline-coverage from a separate worktree.
+
+The same `craco.config.js` is committed to the after branch and inherited by
+the baseline worktree (since it lives at the same path in both checkouts).
+
 ## Resume First
 
 Always call resume before any other phase. It creates or repairs
@@ -90,15 +144,17 @@ The output line `Next action: <name>` decides which command to run next.
 
 ## Phases
 
-The phases are linear: `bootstrap → scan → apiDiff → build →
-baselineCoverage → afterRuntime → report`. The main agent updates
-`progress.json` after each phase via the corresponding CLI, which writes a
+Linear order: `bootstrap → scan → apiDiff → build → baselineCoverage →
+afterRuntime → report`. The main agent updates `progress.json` after each
+phase via the corresponding CLI, which writes a
 `progress.<phase>.snapshot.json`.
 
 ### scan
 
 Pure static scan — does not read manifest at the scan layer. The workflow
-phase wraps it.
+phase wraps it. Run it in the **after** project (its source is the source
+of truth for both baseline and after, assuming `src/` did not change between
+versions).
 
 ```bash
 node $SKILL_DIR/scripts/workflow/scan.js --state-dir coverage-state --project-root .
@@ -107,57 +163,106 @@ node $SKILL_DIR/scripts/workflow/scan.js --state-dir coverage-state --project-ro
 Outputs `coverage-targets.json`, `route-checklist.json`, `pages.json`. After
 this phase, **checkpoint** with the user before kicking off api-diff.
 
+If `src/` did change between baseline and after, document the diff in the
+report's `summary.md`; baseline-coverage can only confirm targets that exist
+at both commits.
+
 ### apiDiff
 
 Reads `<baseline-worktree>/node_modules/<pkg>/{lib,es,dist,types}/*.d.ts` vs
-the after project's copies, classifies changes RED/YELLOW/GREEN, and writes
-`api-diff/dts-diff.md` + `api-diff/dts-impact.md`.
+the after project's copies, classifies changes RED/YELLOW/GREEN, writes
+`api-diff/dts-diff.md` and `api-diff/dts-impact.md`.
 
 ```bash
 node $SKILL_DIR/scripts/workflow/api-diff.js --state-dir coverage-state
 ```
 
+`manifest.baseline.worktreePath` must already be set and that worktree must
+have `node_modules/` populated.
+
 ### build
 
-Swap to the after package version, run the project build, and dispatch the
-`build-fix` subagent (see `subagent-prompts.md`) for any failures. The
-subagent writes results into `build/attempts/<n>/result.json` but DOES NOT
-update progress; the main agent records the outcome.
+Swap to the after package version in the after project, run the project
+build, and dispatch the `build-fix` subagent (see `subagent-prompts.md`)
+for any failures. The subagent writes results into
+`build/attempts/<n>/result.json` but DOES NOT update progress; the main
+agent records the outcome.
 
 If a fix touches a shared component, the subagent emits `needs-decision`.
 **Checkpoint** with the user before continuing.
 
 ### baselineCoverage (no subagent)
 
-Start the dev server in coverage mode, then run the recorder. The user
-operates the browser directly while marker hits accumulate.
+Two processes run concurrently — a baseline dev server inside the baseline
+worktree, and the recorder inside the after project — sharing the after
+project's coverage-state.
+
+#### Step 1: baseline dev server (baseline worktree)
 
 ```bash
-COVERAGE_MODE=1 BROWSER=none yarn start
+cd "$(jq -r '.baseline.worktreePath' <after-project>/coverage-state/manifest.json)"
+
+# STATE_DIR is the ABSOLUTE path to the after project's coverage-state.
+STATE_DIR="<after-project>/coverage-state" \
+  COVERAGE_MODE=1 BROWSER=none yarn start
 ```
 
-Before opening the recorder, manually verify the babel marker is live: in
-the business page's DevTools console run `Array.from(window.__coverageMark__ || [])`
-and confirm it returns at least one target id corresponding to the current
-route. If the array is empty, fix the marker injection before continuing.
+This loads the baseline package version under the babel marker, listening on
+`runtime.devPort` (default 3033). The marker reads `targetPackages` from the
+after manifest via `STATE_DIR`. No file is written into the baseline
+worktree.
+
+If your existing craco.config.js has the older `path.join(__dirname,
+stateDir, ...)` pattern (which silently breaks for absolute paths), either
+upgrade to the snippet in the bootstrap section or pass STATE_DIR as a path
+**relative to the baseline worktree's craco.config.js dir** (e.g.
+`STATE_DIR=../<after-project>/coverage-state`).
+
+#### Step 2: marker sanity check
+
+In the business page's DevTools console (the page is served by the baseline
+dev server through the proxy), run:
+
+```js
+Array.from(window.__coverageMark__ || [])
+```
+
+You MUST see at least one id from the after project's
+`coverage-targets.json`. Empty array means the babel marker did not load —
+fix STATE_DIR / craco wiring before continuing.
+
+#### Step 3: recorder (after project)
+
+In a separate terminal:
 
 ```bash
+cd <after-project>
 python3 $SKILL_DIR/scripts/recorder/recorder.py --state-dir coverage-state
 # resume from a specific route after a crash:
 python3 $SKILL_DIR/scripts/recorder/recorder.py --state-dir coverage-state --route course-center
 ```
 
-The recorder spawns two Chromium windows (business app + panel) and writes
-each route's evidence under `runs/baseline-<version>/routes/<routeId>/`.
-**Checkpoint** with the user once the recorder reports `phase=done`.
+The recorder reads the after project's manifest, opens two Chromium windows
+(business app + panel), and writes evidence under
+`<after-project>/coverage-state/runs/baseline-<version>/routes/<routeId>/`.
+**Checkpoint** with the user once `runtime-state.json` reports `phase=done`.
+
+#### Step 4: stop the baseline dev server
+
+After baseline-coverage completes, stop the baseline dev server before
+moving to afterRuntime — afterRuntime starts a separate dev server in the
+after project on the same port.
 
 ### afterRuntime
 
 Generate the plan, then dispatch the `after-runtime-route` subagent serially
-per route.
+per route. The after dev server runs **in the after project**, with the
+default `coverage-state` directory (no STATE_DIR override needed).
 
 ```bash
 node $SKILL_DIR/scripts/workflow/after-runtime-plan.js --state-dir coverage-state
+# in another terminal, in the after project:
+COVERAGE_MODE=1 BROWSER=none yarn start
 ```
 
 For every route in `after-runtime-plan.json`, dispatch one subagent (see
@@ -197,6 +302,10 @@ prints it.
 - Subagents (build-fix, after-runtime-route) MUST NOT write `progress.json`,
   MUST NOT commit, and MUST stay inside their assigned attempt or route
   directory.
+- The baseline worktree is read-only state from the skill's perspective: no
+  coverage-state, no progress.json, no evidence files. The only mutation
+  inside the baseline worktree is the operator's own browsing of the
+  baseline dev server.
 - All paths in this skill are relative to `$SKILL_DIR`:
   - `scripts/workflow/{resume,scan,api-diff,after-runtime-plan,report}.js`
   - `scripts/recorder/{recorder,runner,action_timeline,evidence,panel_state}.py`
