@@ -3,6 +3,7 @@ import { useEffect, ReactNode } from 'react';
 declare global {
   interface Window {
     __coverageMark__?: Set<string>;
+    __coverageMarkCounts__?: Map<string, number>;
   }
 }
 
@@ -15,9 +16,21 @@ export function __CoverageMark({
 }) {
   useEffect(() => {
     const w = window as Window;
-    (w.__coverageMark__ ??= new Set()).add(id);
+    if (!w.__coverageMark__) {
+      w.__coverageMark__ = new Set();
+      w.__coverageMarkCounts__ = new Map();
+    }
+    const counts = (w.__coverageMarkCounts__ ??= new Map());
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+    w.__coverageMark__.add(id);
     return () => {
-      w.__coverageMark__?.delete(id);
+      const next = (counts.get(id) ?? 1) - 1;
+      if (next <= 0) {
+        counts.delete(id);
+        w.__coverageMark__?.delete(id);
+      } else {
+        counts.set(id, next);
+      }
     };
   }, [id]);
 

@@ -1,7 +1,8 @@
 import path from 'path';
 import type { PluginObj, PluginPass, types as BabelTypes } from '@babel/core';
+import type { Binding } from '@babel/traverse';
 
-type ImportMap = Map<string, string>;
+type ImportMap = Map<string, { importedName: string; binding: Binding | undefined }>;
 
 interface CoverageMarkerOptions {
   targetPackages?: string[];
@@ -11,6 +12,7 @@ interface CoverageMarkerState extends PluginPass {
   importedComponents: ImportMap;
   wrappedNodes: WeakSet<BabelTypes.JSXElement>;
   hasRuntimeImport: boolean;
+  runtimeLocalName: string;
   needsRuntimeImport: boolean;
   opts: CoverageMarkerOptions;
 }
@@ -22,8 +24,8 @@ function jsxIdentifierName(name: BabelTypes.JSXElement['openingElement']['name']
   return name.type === 'JSXIdentifier' ? name.name : undefined;
 }
 
-function isCoverageMarkElement(node: BabelTypes.JSXElement) {
-  return jsxIdentifierName(node.openingElement.name) === runtimeName;
+function isCoverageMarkElement(node: BabelTypes.JSXElement, runtimeLocalName: string) {
+  return jsxIdentifierName(node.openingElement.name) === runtimeLocalName;
 }
 
 export default function coverageMarkerPlugin({
@@ -37,17 +39,24 @@ export default function coverageMarkerPlugin({
       this.importedComponents = new Map();
       this.wrappedNodes = new WeakSet();
       this.hasRuntimeImport = false;
+      this.runtimeLocalName = runtimeName;
       this.needsRuntimeImport = false;
     },
     visitor: {
       ImportDeclaration(importPath, state) {
         const source = importPath.node.source.value;
         if (source === runtimeSource) {
-          state.hasRuntimeImport = importPath.node.specifiers.some(
-            (specifier) =>
+          for (const specifier of importPath.node.specifiers) {
+            if (
               t.isImportSpecifier(specifier) &&
-              t.isIdentifier(specifier.imported, { name: runtimeName }),
-          );
+              t.isIdentifier(specifier.imported, { name: runtimeName }) &&
+              t.isIdentifier(specifier.local)
+            ) {
+              state.hasRuntimeImport = true;
+              state.runtimeLocalName = specifier.local.name;
+              break;
+            }
+          }
           return;
         }
 
@@ -72,7 +81,10 @@ export default function coverageMarkerPlugin({
           const importedName = t.isIdentifier(specifier.imported)
             ? specifier.imported.name
             : specifier.imported.value;
-          state.importedComponents.set(specifier.local.name, importedName);
+          state.importedComponents.set(specifier.local.name, {
+            importedName,
+            binding: importPath.scope.getBinding(specifier.local.name),
+          });
         }
       },
       JSXElement(jsxPath, state) {
@@ -81,17 +93,21 @@ export default function coverageMarkerPlugin({
         }
 
         const elementName = jsxIdentifierName(jsxPath.node.openingElement.name);
-        if (!elementName || elementName === runtimeName) {
+        if (!elementName || elementName === state.runtimeLocalName) {
           return;
         }
 
         const parent = jsxPath.parentPath;
-        if (parent.isJSXElement() && isCoverageMarkElement(parent.node)) {
+        if (parent.isJSXElement() && isCoverageMarkElement(parent.node, state.runtimeLocalName)) {
           return;
         }
 
-        const importedName = state.importedComponents.get(elementName);
-        if (!importedName) {
+        const importedComponent = state.importedComponents.get(elementName);
+        if (!importedComponent) {
+          return;
+        }
+
+        if (jsxPath.scope.getBinding(elementName) !== importedComponent.binding) {
           return;
         }
 
@@ -99,7 +115,7 @@ export default function coverageMarkerPlugin({
         const cwd = state.cwd ?? process.cwd();
         const relativeFilename = path.relative(cwd, filename);
         const line = jsxPath.node.loc?.start.line ?? 0;
-        const id = `${relativeFilename}#${importedName}#L${line}`;
+        const id = `${relativeFilename}#${importedComponent.importedName}#L${line}`;
         const original = jsxPath.node;
 
         state.wrappedNodes.add(original);
@@ -107,7 +123,7 @@ export default function coverageMarkerPlugin({
         jsxPath.replaceWith(
           t.jsxElement(
             t.jsxOpeningElement(
-              t.jsxIdentifier(runtimeName),
+              t.jsxIdentifier(state.runtimeLocalName),
               [
                 t.jsxAttribute(
                   t.jsxIdentifier('id'),
@@ -116,7 +132,7 @@ export default function coverageMarkerPlugin({
               ],
               false,
             ),
-            t.jsxClosingElement(t.jsxIdentifier(runtimeName)),
+            t.jsxClosingElement(t.jsxIdentifier(state.runtimeLocalName)),
             [original],
             false,
           ),

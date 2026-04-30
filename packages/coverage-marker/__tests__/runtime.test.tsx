@@ -40,3 +40,16 @@ test('missing window.__coverageMark__ initializes Set', () => {
 
   expect(window.__coverageMark__).toBeInstanceOf(Set);
 });
+
+test('keeps id while another instance with the same id remains mounted', () => {
+  const first = render(<CoverageMark id="src/x.tsx#Widget#L3">first</CoverageMark>);
+  const second = render(<CoverageMark id="src/x.tsx#Widget#L3">second</CoverageMark>);
+
+  first.unmount();
+
+  expect(window.__coverageMark__).toEqual(new Set(['src/x.tsx#Widget#L3']));
+
+  second.unmount();
+
+  expect(window.__coverageMark__).toEqual(new Set());
+});

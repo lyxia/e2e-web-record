@@ -132,3 +132,42 @@ test('already wrapped JSX is not recursively wrapped and nested target JSX wraps
   expect(code).toContain('<__CoverageMark id="manual">');
   expect(code).not.toContain('src/x.tsx#Widget#L7');
 });
+
+test('shadowed local binding with same name as target import is not wrapped', () => {
+  const code = transform([
+    "import { Widget } from '@target/ui';",
+    "import { Other } from '@other/ui';",
+    '',
+    'export const App = () => {',
+    '  const Widget = Other;',
+    '  return <Widget />;',
+    '};',
+  ].join('\n'));
+
+  expect(code).not.toContain('src/x.tsx#Widget#L6');
+});
+
+test('existing aliased runtime import is reused consistently', () => {
+  const code = transform([
+    "import { Widget } from '@target/ui';",
+    "import { __CoverageMark as Mark } from '@odc/coverage-marker/runtime';",
+    '',
+    'export const App = () => <><Mark id="manual"><span /></Mark><Widget /></>;',
+  ].join('\n'));
+
+  expect(code).toContain('<Mark id="src/x.tsx#Widget#L4">');
+  expect(code).not.toContain('<__CoverageMark id=');
+  expect(code).not.toContain('import { __CoverageMark }');
+});
+
+test('existing aliased runtime wrapper prevents recursive wrapping inside it', () => {
+  const code = transform([
+    "import { Widget } from '@target/ui';",
+    "import { __CoverageMark as Mark } from '@odc/coverage-marker/runtime';",
+    '',
+    'export const App = () => <Mark id="manual"><Widget /></Mark>;',
+  ].join('\n'));
+
+  expect(code).toContain('<Mark id="manual">');
+  expect(code).not.toContain('src/x.tsx#Widget#L4');
+});
