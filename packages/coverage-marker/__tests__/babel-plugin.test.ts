@@ -171,3 +171,16 @@ test('existing aliased runtime wrapper prevents recursive wrapping inside it', (
   expect(code).toContain('<Mark id="manual">');
   expect(code).not.toContain('src/x.tsx#Widget#L4');
 });
+
+test('runtime alias is detected before JSX regardless of source order', () => {
+  const code = transform([
+    "import { Widget } from '@target/ui';",
+    '',
+    'export const App = () => <Widget />;',
+    "import { __CoverageMark as Mark } from '@odc/coverage-marker/runtime';",
+  ].join('\n'));
+
+  expect(code).toContain('<Mark id="src/x.tsx#Widget#L3">');
+  expect(code).not.toContain('<__CoverageMark id=');
+  expect(code).not.toContain('import { __CoverageMark }');
+});

@@ -43,49 +43,80 @@ export default function coverageMarkerPlugin({
       this.needsRuntimeImport = false;
     },
     visitor: {
-      ImportDeclaration(importPath, state) {
-        const source = importPath.node.source.value;
-        if (source === runtimeSource) {
-          for (const specifier of importPath.node.specifiers) {
+      Program: {
+        enter(programPath, state) {
+          state.importedComponents = new Map();
+          state.hasRuntimeImport = false;
+          state.runtimeLocalName = runtimeName;
+          state.needsRuntimeImport = false;
+
+          const targetPackages = state.opts.targetPackages ?? [];
+          for (const statementPath of programPath.get('body')) {
+            if (!statementPath.isImportDeclaration()) {
+              continue;
+            }
+
+            const source = statementPath.node.source.value;
+            if (source === runtimeSource) {
+              for (const specifier of statementPath.node.specifiers) {
+                if (
+                  t.isImportSpecifier(specifier) &&
+                  t.isIdentifier(specifier.imported, { name: runtimeName }) &&
+                  t.isIdentifier(specifier.local)
+                ) {
+                  state.hasRuntimeImport = true;
+                  state.runtimeLocalName = specifier.local.name;
+                  break;
+                }
+              }
+              continue;
+            }
+
             if (
-              t.isImportSpecifier(specifier) &&
-              t.isIdentifier(specifier.imported, { name: runtimeName }) &&
-              t.isIdentifier(specifier.local)
+              targetPackages.length === 0 ||
+              !targetPackages.includes(source) ||
+              statementPath.node.importKind === 'type'
             ) {
-              state.hasRuntimeImport = true;
-              state.runtimeLocalName = specifier.local.name;
-              break;
+              continue;
+            }
+
+            for (const specifier of statementPath.node.specifiers) {
+              if (
+                !t.isImportSpecifier(specifier) ||
+                specifier.importKind === 'type' ||
+                !t.isIdentifier(specifier.local)
+              ) {
+                continue;
+              }
+
+              const importedName = t.isIdentifier(specifier.imported)
+                ? specifier.imported.name
+                : specifier.imported.value;
+              state.importedComponents.set(specifier.local.name, {
+                importedName,
+                binding: statementPath.scope.getBinding(specifier.local.name),
+              });
             }
           }
-          return;
-        }
-
-        const targetPackages = state.opts.targetPackages ?? [];
-        if (
-          targetPackages.length === 0 ||
-          !targetPackages.includes(source) ||
-          importPath.node.importKind === 'type'
-        ) {
-          return;
-        }
-
-        for (const specifier of importPath.node.specifiers) {
-          if (
-            !t.isImportSpecifier(specifier) ||
-            specifier.importKind === 'type' ||
-            !t.isIdentifier(specifier.local)
-          ) {
-            continue;
+        },
+        exit(programPath, state) {
+          if (!state.needsRuntimeImport || state.hasRuntimeImport) {
+            return;
           }
 
-          const importedName = t.isIdentifier(specifier.imported)
-            ? specifier.imported.name
-            : specifier.imported.value;
-          state.importedComponents.set(specifier.local.name, {
-            importedName,
-            binding: importPath.scope.getBinding(specifier.local.name),
-          });
-        }
+          programPath.unshiftContainer(
+            'body',
+            t.importDeclaration(
+              [
+                t.importSpecifier(
+                  t.identifier(runtimeName),
+                  t.identifier(runtimeName),
+                ),
+              ],
+              t.stringLiteral(runtimeSource),
+            ),
+          );
+        },
       },
       JSXElement(jsxPath, state) {
         if (state.wrappedNodes.has(jsxPath.node)) {
@@ -137,26 +168,6 @@ export default function coverageMarkerPlugin({
             false,
           ),
         );
-      },
-      Program: {
-        exit(programPath, state) {
-          if (!state.needsRuntimeImport || state.hasRuntimeImport) {
-            return;
-          }
-
-          programPath.unshiftContainer(
-            'body',
-            t.importDeclaration(
-              [
-                t.importSpecifier(
-                  t.identifier(runtimeName),
-                  t.identifier(runtimeName),
-                ),
-              ],
-              t.stringLiteral(runtimeSource),
-            ),
-          );
-        },
       },
     },
   };
