@@ -58,7 +58,9 @@ async def run_recorder(state_dir: Path, panel_html: Path):
     proxy = runtime.get("proxy")
     launch_options = {"headless": False}
     if proxy:
-        launch_options["proxy"] = proxy
+        launch_options["proxy"] = {"server": proxy}
+    launch_options["args"] = ["--ignore-certificate-errors"]
+    launch_options["viewport"] = {"width": 1280, "height": 900}
 
     cur_idx = 0
     evidence_idx = 1
@@ -92,7 +94,7 @@ async def run_recorder(state_dir: Path, panel_html: Path):
                     "routeId": route["routeId"],
                     "detectedTargetIds": detected,
                     "confirmedTargetIds": detected,
-                    "screenshot": str(screenshot),
+                    "screenshot": "screenshot.png",
                     "reviewStatus": "visual-ok",
                 },
             )
@@ -163,6 +165,10 @@ def _runtime_state_baseline(*, panel_state, route, current_url, remaining_routes
         "currentRouteId": route["routeId"],
         "currentUrl": current_url,
         "currentRoutePath": route.get("path", ""),
+        "detectedTargetIds": [target["id"] for target in panel_state["currentDetected"]],
+        "currentRouteRemaining": [target["id"] for target in panel_state["currentRouteRemaining"]],
+        "totalRuntimeTargets": panel_state["totalRuntimeTargets"],
+        "confirmedTotal": panel_state["confirmedTotal"],
         "panelState": panel_state,
         "remainingRoutesCount": remaining_routes_count,
         "lastUpdate": iso_now(),
@@ -176,8 +182,11 @@ def _runtime_state_done(panel_state, targets):
         "currentRouteId": None,
         "currentUrl": None,
         "currentRoutePath": "",
-        "panelState": panel_state,
+        "detectedTargetIds": [],
+        "currentRouteRemaining": [],
         "totalRuntimeTargets": len(targets),
+        "confirmedTotal": panel_state["confirmedTotal"],
+        "panelState": panel_state,
         "remainingRoutesCount": 0,
         "lastUpdate": iso_now(),
     }

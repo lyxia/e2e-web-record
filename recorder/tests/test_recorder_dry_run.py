@@ -50,6 +50,10 @@ def test_dry_run_writes_initial_runtime_state(tmp_path):
     assert state["currentRouteId"] == "p1"
     assert state["currentUrl"] == "http://app.test/p1"
     assert state["remainingRoutesCount"] == 1
+    assert state["detectedTargetIds"] == []
+    assert state["currentRouteRemaining"] == ["src/A.tsx#Widget#L4#C10"]
+    assert state["totalRuntimeTargets"] == 1
+    assert state["confirmedTotal"] == 0
     assert state["panelState"]["totalRuntimeTargets"] == 1
     assert state["panelState"]["currentRouteRemaining"] == [
         {
@@ -73,4 +77,8 @@ def test_dry_run_empty_selected_routes_writes_done_without_indexing(tmp_path):
     assert state["currentRouteId"] is None
     assert state["currentUrl"] is None
     assert state["remainingRoutesCount"] == 0
+    assert state["detectedTargetIds"] == []
+    assert state["currentRouteRemaining"] == []
+    assert state["totalRuntimeTargets"] == 0
+    assert state["confirmedTotal"] == 0
     assert state["panelState"]["totalRuntimeTargets"] == 0
