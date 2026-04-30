@@ -1,248 +1,156 @@
 # component-upgrade-coverage-recorder
 
-React 组件库升级覆盖证据采集工具。它会扫描业务代码里的目标组件调用点，录制 baseline 覆盖证据，再在升级后的代码里验证这些覆盖点是否仍然可达，最后生成报告。
+这个仓库用于生成一个 Codex skill：`react-component-upgrade`。使用者不是直接调用仓库里的 recorder / workflow 脚本，而是在业务项目里启用这个 skill，然后通过 prompt 让 AI 代为完成组件库升级覆盖验证。
 
-## 1. 构建 skill
+## 它解决什么问题
 
-在本仓库运行：
+组件库升级时，单靠单测和构建很难证明“业务页面里用到的组件调用点都看过了”。这个 skill 会让 AI 按固定流程做几件事：
+
+- 扫描业务代码里目标组件库的 JSX 调用点。
+- 生成需要覆盖的路由和组件目标清单。
+- 在升级前版本录制 baseline 覆盖证据。
+- 在升级后版本做 after-runtime 验证。
+- 收集截图、视频、Playwright trace、coverage、运行时错误和前后对比报告。
+- 根据缺失覆盖或异常继续驱动修复和复测。
+
+## 设计亮点
+
+这个项目不是一个单次运行的录屏脚本，而是一个面向 AI 协作的覆盖验证工作流。核心设计是让 AI 可以长时间、可恢复、可审计地推进组件升级验证。
+
+- **Skill-first**：仓库产物是 Codex skill，使用者通过 prompt 交互；底层脚本是 skill 的工具箱，不要求人手动记命令。
+- **单一状态目录**：所有阶段都围绕业务项目里的 `coverage-state/` 展开，baseline worktree 也读取同一份 manifest，避免多份状态互相漂移。
+- **可恢复流程**：`progress.json` 记录当前阶段和下一步，中断后让 AI 先 resume，再从正确位置继续。
+- **目标级覆盖**：扫描 JSX 调用点后生成 route 和 target 清单，验证关注的是“这些组件调用点是否真的在页面运行时出现过”，不是只看页面能否打开。
+- **baseline vs after 闭环**：先在升级前版本录制 baseline 证据，再在升级后版本验证同一批 target，报告里按路由做前后对比。
+- **证据完整性**：截图、视频、Playwright trace、coverage、console/network/error 日志一起落盘，失败时能回放和定位，而不是只给一个 pass/fail。
+- **AI 可控的 after-runtime**：after-runtime 使用固定 recorder 执行，AI 只补 route 级 `playbook.json` 描述交互步骤，避免子 agent 临时写散乱 Playwright 脚本。
+- **质量门**：after-runtime 结束后检查 result、coverage、trace、video 和 expected targets，防止“提示词说录了，但证据不完整”。
+- **可视化报告**：`report/index.html` 把 baseline、after initial、after final 的图、视频、trace 放在同一路由下，方便人工快速复核。
+
+## 怎么安装
+
+先在本仓库构建 skill 产物：
 
 ```bash
 yarn install
 yarn build:skill
 ```
 
-生成产物在：
+构建完成后，把下面这个目录安装到 Codex 的 skills 目录：
+
+```text
+dist/skills/react-component-upgrade
+```
+
+安装后的 skill 名称是：
+
+```text
+react-component-upgrade
+```
+
+如果是在当前 monorepo 内使用，也可以直接保留在 `.agents/skills/react-component-upgrade` 这类本地 skill 目录中，只要 Codex 能发现它即可。
+
+## 怎么使用
+
+在需要做组件库升级验证的业务项目里，直接用自然语言触发 skill。典型 prompt：
+
+```text
+使用 react-component-upgrade skill，帮我对这个项目做组件库升级覆盖验证。
+baseline 版本是 1.1.42，升级后版本是当前分支。
+目标组件库是 @xxx/ui。
+业务入口域名是 https://example.test/main/app。
+```
+
+如果已经有 `coverage-state/manifest.json`，可以这样说：
+
+```text
+使用 react-component-upgrade skill，从 coverage-state/manifest.json 继续执行组件升级覆盖验证。
+先 resume，看下一步应该做什么。
+```
+
+如果中途断了，继续用：
+
+```text
+继续 react-component-upgrade 的覆盖验证流程。
+读取 coverage-state/progress.json 和 coverage-state/manifest.json，按下一步执行。
+```
+
+如果只想看结果：
+
+```text
+使用 react-component-upgrade skill，读取 coverage-state/report，帮我解释这次升级覆盖结果。
+重点看失败路由、缺失 targets、截图、视频和 trace。
+```
+
+## 使用时需要告诉 AI 什么
+
+第一次启动流程时，尽量在 prompt 里给齐这些信息：
+
+- 业务项目路径。
+- 目标组件库包名，例如 `@xxx/ui`。
+- baseline 版本、commit 或 tag。
+- 当前升级分支或升级后版本。
+- 业务访问入口 URL，尤其是需要通过主应用或 qiankun 容器访问时。
+- 本地启动方式，例如 `yarn start`、端口、代理地址。
+- 登录态或 Playwright profile 是否已有。
+- 如果 Python/Playwright 环境特殊，告诉它应该使用哪个 Python。
+
+AI 会根据这些信息创建或修正 `coverage-state/manifest.json`，然后按 skill 内部流程执行。
+
+## 使用过程中你会看到什么
+
+业务项目里会生成一个 `coverage-state/` 目录，主要内容包括：
+
+- `manifest.json`：项目、版本、入口 URL、运行环境配置。
+- `progress.json`：当前执行到哪一步，支持中断后恢复。
+- `coverage-targets.json`：扫描出的组件调用点。
+- `route-checklist.json`：需要验证的路由清单。
+- `runs/baseline-*/routes/`：升级前录制证据。
+- `runs/after/routes/`：升级后运行时验证证据。
+- `report/summary.md`：文本摘要。
+- `report/index.html`：可视化报告，包含前后截图、视频、trace 和对比。
+
+通常优先看：
+
+```text
+coverage-state/report/index.html
+```
+
+## 人需要参与什么
+
+这个 skill 会让 AI 执行大部分脚本和验证，但有几类事情通常需要你确认：
+
+- baseline 版本和升级后版本是否正确。
+- 业务入口 URL 是否必须走主应用容器，而不是子应用本地地址。
+- 登录态、代理、权限账号是否可用。
+- 某些路由是否业务上不可达，是否应该 skip。
+- 录制 baseline 时，是否需要你在浏览器里辅助点击复杂流程。
+- after-runtime 发现缺失覆盖时，是补 playbook、修业务代码，还是确认该目标无需覆盖。
+
+## 结果怎么看
+
+报告里重点看三类信息：
+
+- `passed`：升级后仍然覆盖到预期组件目标。
+- `failed`：有预期 target 没覆盖到，或运行时证据不完整。
+- `skipped`：路由被确认不可达、废弃或不适合验证。
+
+HTML 报告会把同一路由的 baseline、after initial、after final 放在一起，方便对照截图、视频和 trace。遇到 failed route 时，优先打开该路由的 after video 和 trace，再决定是补交互步骤还是修复升级回归。
+
+## 维护这个仓库时
+
+这个仓库本身的脚本、recorder、panel、workflow 都是 skill 的实现细节。只有维护 skill 时才需要直接运行仓库里的命令。
+
+常用维护动作：
+
+```bash
+yarn build:skill
+yarn workspace workflow test --runInBand
+PYTHONPATH=recorder/src python -m pytest -q
+```
+
+构建产物会更新到：
 
 ```text
 dist/skills/react-component-upgrade/
-```
-
-后续命令里的 `$SKILL_DIR` 指向这个目录。
-
-## 2. 准备业务项目
-
-在升级后的业务项目里创建：
-
-```text
-coverage-state/manifest.json
-```
-
-示例：
-
-```json
-{
-  "schemaVersion": 1,
-  "project": "demo-app",
-  "library": "@example/ui",
-  "baseline": {
-    "version": "1.0.0",
-    "commit": "abc123",
-    "worktreePath": "/abs/path/to/baseline-worktree"
-  },
-  "after": { "version": "1.1.0", "branch": "feature/upgrade-ui" },
-  "runtime": {
-    "targetPackages": ["@example/ui"],
-    "devCommand": "yarn start",
-    "devPort": 3033,
-    "baseUrl": "https://example.test/app",
-    "proxy": "http://127.0.0.1:8899",
-    "playwrightProfile": "coverage-state/.playwright-profile",
-    "pythonPath": "/abs/path/to/python-with-playwright/bin/python3",
-    "playwrightPackagePath": "/abs/path/to/site-packages/playwright"
-  }
-}
-```
-
-安装运行依赖：
-
-```bash
-yarn add -D @odc/coverage-marker
-pip install playwright pytest
-playwright install chromium
-```
-
-业务项目的 babel/craco 需要在 `COVERAGE_MODE=1` 时加载 `@odc/coverage-marker`，并从 `coverage-state/manifest.json` 读取 `runtime.targetPackages`。
-
-## 3. 准备 baseline worktree
-
-在升级后的业务项目旁边创建 baseline worktree：
-
-```bash
-git worktree add /abs/path/to/baseline-worktree <baseline-commit>
-( cd /abs/path/to/baseline-worktree && yarn install )
-```
-
-`manifest.baseline.worktreePath` 必须指向这个目录。
-
-## 4. 运行 scan
-
-在升级后的业务项目里运行：
-
-```bash
-node $SKILL_DIR/scripts/workflow/scan.js --state-dir coverage-state --project-root .
-```
-
-输出：
-
-```text
-coverage-state/coverage-targets.json
-coverage-state/route-checklist.json
-coverage-state/pages.json
-```
-
-## 5. 运行 API diff
-
-```bash
-node $SKILL_DIR/scripts/workflow/api-diff.js --state-dir coverage-state
-```
-
-输出：
-
-```text
-coverage-state/api-diff/dts-diff.md
-coverage-state/api-diff/dts-impact.md
-```
-
-## 6. 录制 baseline 覆盖
-
-先在 baseline worktree 启动业务：
-
-```bash
-cd "$(jq -r '.baseline.worktreePath' <after-project>/coverage-state/manifest.json)"
-STATE_DIR="<after-project>/coverage-state" \
-  COVERAGE_MODE=1 BROWSER=none yarn start
-```
-
-再在升级后的业务项目里启动 recorder：
-
-```bash
-cd <after-project>
-RECORDER_PYTHON="$(jq -r '.runtime.pythonPath' coverage-state/manifest.json)"
-"$RECORDER_PYTHON" $SKILL_DIR/scripts/recorder/recorder.py \
-  --state-dir coverage-state \
-  --panel-html $SKILL_DIR/scripts/panel/index.html
-```
-
-如果要从某条 route 恢复：
-
-```bash
-"$RECORDER_PYTHON" $SKILL_DIR/scripts/recorder/recorder.py \
-  --state-dir coverage-state \
-  --panel-html $SKILL_DIR/scripts/panel/index.html \
-  --route <routeId>
-```
-
-baseline 证据输出到：
-
-```text
-coverage-state/runs/baseline-<version>/routes/<routeId>/
-```
-
-每条 route 包含 `coverage.json`、`interaction-context.json`、日志、截图、aria snapshot 和 `trace.zip`。
-
-## 7. 运行 after-runtime 验证
-
-先生成 after-runtime 计划：
-
-```bash
-node $SKILL_DIR/scripts/workflow/after-runtime-plan.js --state-dir coverage-state
-```
-
-启动升级后的业务项目：
-
-```bash
-COVERAGE_MODE=1 BROWSER=none yarn start
-```
-
-对单条 route 运行固定 recorder：
-
-```bash
-python3 $SKILL_DIR/scripts/recorder/after_runtime_recorder.py \
-  --state-dir coverage-state \
-  --route-id <routeId>
-```
-
-可以多次传 `--route-id`。如果某条 route 需要额外交互，在运行前写：
-
-```text
-coverage-state/runs/after/routes/<routeId>/playbook.json
-```
-
-示例：
-
-```json
-{
-  "steps": [
-    { "type": "click", "texts": ["新增", "Add"], "timeout": 3000 },
-    { "type": "wait", "ms": 1000 },
-    { "type": "clickTabs", "max": 3 }
-  ]
-}
-```
-
-after-runtime 证据输出到：
-
-```text
-coverage-state/runs/after/routes/<routeId>/
-  initial/
-  final/
-  result.json
-  fixes.json
-```
-
-`initial/` 和 `final/` 都包含截图、视频、trace 和运行时日志。
-
-## 8. 质量门
-
-after-runtime 完成后运行：
-
-```bash
-node $SKILL_DIR/scripts/workflow/after-runtime-quality-gate.js --state-dir coverage-state
-```
-
-它会检查每条 planned route 的 `result.json`、final coverage、`trace.zip`、`video.webm` 和 expected targets 是否一致。
-
-## 9. 生成报告
-
-```bash
-node $SKILL_DIR/scripts/workflow/report.js --state-dir coverage-state
-```
-
-输出：
-
-```text
-coverage-state/report/summary.md
-coverage-state/report/index.html
-coverage-state/report/coverage-summary.json
-coverage-state/report/runtime-diff.json
-coverage-state/report/api-impact.json
-```
-
-优先打开：
-
-```text
-coverage-state/report/index.html
-```
-
-里面有 baseline / after initial / after final 的截图、视频、trace 和 route 级对比。
-
-## 常用检查
-
-查看下一步：
-
-```bash
-node $SKILL_DIR/scripts/workflow/resume.js --state-dir coverage-state
-```
-
-检查 marker 是否生效，在业务页面 DevTools 里执行：
-
-```js
-Array.from(window.__coverageMark__ || [])
-```
-
-测试本仓库：
-
-```bash
-~/.pyenv/versions/3.11.9/bin/python -m pytest -q
-yarn workspace workflow test --runInBand
 ```
