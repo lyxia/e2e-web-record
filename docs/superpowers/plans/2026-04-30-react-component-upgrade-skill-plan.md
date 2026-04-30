@@ -4,7 +4,7 @@
 
 **目标：** 基于已确认设计 `docs/superpowers/specs/2026-04-30-react-component-upgrade-skill-design.md`，把当前 MVP 采集器扩展为完整可分发的 `react-component-upgrade` skill。
 
-**架构：** 在现有 monorepo 内继续演进：`scan/` 承载 Node/TypeScript 确定性脚本，`recorder/` 承载 Playwright Python 长跑采集进程，`panel/` 承载人工操作面板，`packages/coverage-marker/` 承载 Babel marker 注入。main agent 只编排和更新本地状态；Phase build 与 after-runtime 的 LLM 判断工作通过串行 subagent 完成。
+**架构：** 在现有 monorepo 内继续演进：`scan/` 只做纯静态扫描，不读取 manifest/progress；新增 `workflow/` workspace 负责 manifest、state/resume、api-diff、after-runtime plan、report 等流程编排脚本；`recorder/` 承载 Playwright Python 长跑采集进程，`panel/` 承载人工操作面板，`packages/coverage-marker/` 承载 Babel marker 注入。main agent 只编排和更新本地状态；Phase build 与 after-runtime 的 LLM 判断工作通过串行 subagent 完成。
 
 **技术栈：** TypeScript 4.6、Node 16、Jest/ts-jest、esbuild、Python 3.10+、Playwright、pytest、React 17、Vite、yarn workspaces。
 
@@ -26,26 +26,38 @@
 ```text
 scan/
 ├── src/
+│   ├── runScan.ts            # 纯 AST scan，输入显式参数，输出 scan artifacts
+│   ├── findJsxCallSites.ts
+│   ├── parseRouter.ts
+│   ├── buildImportGraph.ts
+│   ├── greedyCover.ts
+│   └── index.ts              # 纯 scan CLI，不读 manifest/progress
+├── __tests__/
+│   └── runScan.test.ts
+└── package.json
+
+workflow/
+├── src/
 │   ├── manifest.ts           # manifest schema 与解析
 │   ├── state.ts              # progress schema、原子写、snapshot、状态更新
 │   ├── reconcile.ts          # artifact 与 progress 对账
 │   ├── resume.ts             # resume CLI
+│   ├── runScanPhase.ts       # 读取 manifest/progress 后调用 scan workspace
+│   ├── run-scan-cli.ts       # scan phase CLI
 │   ├── apiDiff.ts            # d.ts diff 与 impact 分析
 │   ├── api-diff-cli.ts       # api-diff CLI
 │   ├── afterRuntimePlan.ts   # 根据 baseline evidence 生成 after-runtime-plan.json
 │   ├── after-runtime-plan-cli.ts
 │   ├── report.ts             # 汇总报告
-│   ├── report-cli.ts
-│   ├── runScan.ts            # 接入新 schema/progress
-│   └── index.ts              # scan CLI
+│   └── report-cli.ts
 ├── __tests__/
 │   ├── state.test.ts
 │   ├── reconcile.test.ts
 │   ├── resumeCli.test.ts
+│   ├── runScanPhase.test.ts
 │   ├── apiDiff.test.ts
 │   ├── afterRuntimePlan.test.ts
-│   ├── report.test.ts
-│   └── runScan.test.ts
+│   └── report.test.ts
 └── package.json
 
 recorder/
@@ -73,22 +85,92 @@ scripts/build-skill.ts        # 打包全部 scripts/templates
 ## 2. Task 1：状态本地化与 Resume 基座
 
 **Files:**
-- Modify: `scan/src/manifest.ts`
-- Create: `scan/src/state.ts`
-- Create: `scan/src/reconcile.ts`
-- Create: `scan/src/resume.ts`
-- Modify: `scan/src/index.ts`
-- Create: `scan/__tests__/state.test.ts`
-- Create: `scan/__tests__/reconcile.test.ts`
-- Create: `scan/__tests__/resumeCli.test.ts`
-- Modify: `scan/__tests__/manifest.test.ts`
-- Modify: `scan/package.json`
+- Modify: `package.json`
+- Create: `workflow/package.json`
+- Create: `workflow/tsconfig.json`
+- Modify: `workflow/src/manifest.ts`
+- Create: `workflow/src/state.ts`
+- Create: `workflow/src/reconcile.ts`
+- Create: `workflow/src/resume.ts`
+- Create: `workflow/__tests__/state.test.ts`
+- Create: `workflow/__tests__/reconcile.test.ts`
+- Create: `workflow/__tests__/resumeCli.test.ts`
+- Create: `workflow/__tests__/manifest.test.ts`
 
-- [ ] **Step 1：扩展 manifest 测试**
+- [ ] **Step 1：新增 workflow workspace**
 
-在 `scan/__tests__/manifest.test.ts` 增加：
+修改根 `package.json`：
+
+```json
+{
+  "name": "component-upgrade-coverage-recorder",
+  "private": true,
+  "workspaces": ["packages/*", "scan", "panel", "workflow"],
+  "scripts": {
+    "build:skill": "ts-node scripts/build-skill.ts",
+    "test": "yarn workspaces run test"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.0",
+    "typescript": "^4.6.3"
+  }
+}
+```
+
+创建 `workflow/package.json`：
+
+```json
+{
+  "name": "workflow",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "yarn build:resume",
+    "build:resume": "esbuild src/resume.ts --bundle --platform=node --target=node16 --outfile=dist/resume.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "scan": "0.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^16.18.126",
+    "esbuild": "^0.20.2",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.5"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.test.ts"]
+  }
+}
+```
+
+创建 `workflow/tsconfig.json`：
+
+```json
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["jest", "node"]
+  },
+  "include": ["src", "__tests__"]
+}
+```
+
+- [ ] **Step 2：扩展 manifest 测试**
+
+在 `workflow/__tests__/manifest.test.ts` 写入：
 
 ```ts
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { loadManifest, resolveManifestBaseUrl } from '../src/manifest';
+
 it('loads complete upgrade manifest fields without dropping data', () => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-state-'));
   const manifest = {
@@ -130,14 +212,14 @@ it('resolves baseUrl from runtime before legacy top-level baseUrl', () => {
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/manifest.test.ts
+yarn workspace workflow test --runInBand __tests__/manifest.test.ts
 ```
 
 预期：失败，提示 `resolveManifestBaseUrl` 未定义。
 
-- [ ] **Step 2：实现 manifest schema**
+- [ ] **Step 3：实现 manifest schema**
 
-将 `scan/src/manifest.ts` 扩展为：
+将 `workflow/src/manifest.ts` 扩展为：
 
 ```ts
 import fs from 'fs';
@@ -186,19 +268,17 @@ export function validateTargetPackages(targetPackages: unknown): string[] {
 }
 ```
 
-在 `scan/src/index.ts` 改用 `resolveManifestBaseUrl(manifest)` 传给 `runScan`。
-
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/manifest.test.ts
+yarn workspace workflow test --runInBand __tests__/manifest.test.ts
 ```
 
 预期：通过。
 
-- [ ] **Step 3：写 state/reconcile/resume 测试**
+- [ ] **Step 4：写 state/reconcile/resume 测试**
 
-新增 `scan/__tests__/state.test.ts`，覆盖：
+新增 `workflow/__tests__/state.test.ts`，覆盖：
 
 ```ts
 import fs from 'fs';
@@ -254,21 +334,21 @@ describe('state utilities', () => {
 });
 ```
 
-新增 `scan/__tests__/reconcile.test.ts`，覆盖 scan artifact 缺失回退、baseline heartbeat stale、after fixes 未 commit 阻塞。
+新增 `workflow/__tests__/reconcile.test.ts`，覆盖 scan artifact 缺失回退、baseline heartbeat stale、after fixes 未 commit 阻塞。
 
-新增 `scan/__tests__/resumeCli.test.ts`，用 `node -r ts-node/register src/resume.ts --state-dir <tmp>` 验证输出包含 `Next action: run-scan`。
+新增 `workflow/__tests__/resumeCli.test.ts`，用 `node -r ts-node/register src/resume.ts --state-dir <tmp>` 验证输出包含 `Next action: run-scan`。
 
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/state.test.ts __tests__/reconcile.test.ts __tests__/resumeCli.test.ts
+yarn workspace workflow test --runInBand __tests__/state.test.ts __tests__/reconcile.test.ts __tests__/resumeCli.test.ts
 ```
 
 预期：失败，因为实现未写。
 
-- [ ] **Step 4：实现 state/reconcile/resume**
+- [ ] **Step 5：实现 state/reconcile/resume**
 
-实现 `scan/src/state.ts`，包含：
+实现 `workflow/src/state.ts`，包含：
 
 - `UpgradeProgress`、`PhaseName`、`RouteItemProgress` 类型。
 - `atomicWriteJson()`，写 `.tmp`、fsync、已有文件改名 `.bak`、rename。
@@ -278,13 +358,13 @@ yarn workspace scan test --runInBand __tests__/state.test.ts __tests__/reconcile
 - `updateBaselineRoute()` / `updateAfterRoute()`。
 - `writeProgressSnapshot()`。
 
-实现 `scan/src/reconcile.ts`，包含：
+实现 `workflow/src/reconcile.ts`，包含：
 
 - scan done 但缺 `coverage-targets.json` / `route-checklist.json` / `pages.json` 时回退 scan。
 - baseline route running 且 `runtime-state.json` heartbeat 超过 120 秒时标记 stale。
 - after route 有 `fixes.json` 且未记录 commit 时标记 blocked。
 
-实现 `scan/src/resume.ts`，包含：
+实现 `workflow/src/resume.ts`，包含：
 
 - `--state-dir` 参数。
 - `loadOrCreateProgress()`。
@@ -295,19 +375,18 @@ yarn workspace scan test --runInBand __tests__/state.test.ts __tests__/reconcile
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/state.test.ts __tests__/reconcile.test.ts __tests__/resumeCli.test.ts
+yarn workspace workflow test --runInBand __tests__/state.test.ts __tests__/reconcile.test.ts __tests__/resumeCli.test.ts
 ```
 
 预期：通过。
 
-- [ ] **Step 5：打包 resume.js**
+- [ ] **Step 6：打包 resume.js**
 
-修改 `scan/package.json`：
+确认 `workflow/package.json` 包含：
 
 ```json
 "scripts": {
-  "build": "yarn build:scan && yarn build:resume",
-  "build:scan": "esbuild src/index.ts --bundle --platform=node --target=node16 --outfile=dist/scan.js",
+  "build": "yarn build:resume",
   "build:resume": "esbuild src/resume.ts --bundle --platform=node --target=node16 --outfile=dist/resume.js",
   "test": "jest"
 }
@@ -316,42 +395,46 @@ yarn workspace scan test --runInBand __tests__/state.test.ts __tests__/reconcile
 运行：
 
 ```bash
-yarn workspace scan build:resume
-yarn workspace scan build
+yarn workspace workflow build
 ```
 
-预期：`scan/dist/scan.js` 和 `scan/dist/resume.js` 都存在。
+预期：`workflow/dist/resume.js` 存在。
 
-- [ ] **Step 6：提交**
+- [ ] **Step 7：提交**
 
 ```bash
-git add scan/src/manifest.ts scan/src/index.ts scan/src/state.ts scan/src/reconcile.ts scan/src/resume.ts scan/__tests__/manifest.test.ts scan/__tests__/state.test.ts scan/__tests__/reconcile.test.ts scan/__tests__/resumeCli.test.ts scan/package.json
+git add package.json workflow/package.json workflow/tsconfig.json workflow/src/manifest.ts workflow/src/state.ts workflow/src/reconcile.ts workflow/src/resume.ts workflow/__tests__/manifest.test.ts workflow/__tests__/state.test.ts workflow/__tests__/reconcile.test.ts workflow/__tests__/resumeCli.test.ts
 git commit -m "feat(skill): add local state and resume foundation"
 ```
 
-## 3. Task 2：Scan 接入新状态与产物 Schema
+## 3. Task 2：Scan 纯工具化与 Workflow Scan Phase
 
 **Files:**
 - Modify: `scan/src/runScan.ts`
 - Modify: `scan/src/index.ts`
 - Modify: `scan/__tests__/runScan.test.ts`
-- Modify: `scan/__tests__/manifest.test.ts`
+- Create: `workflow/src/runScanPhase.ts`
+- Create: `workflow/src/run-scan-cli.ts`
+- Create: `workflow/__tests__/runScanPhase.test.ts`
+- Modify: `workflow/package.json`
 
-- [ ] **Step 1：补 scan progress 测试**
+- [ ] **Step 1：补 scan 纯 CLI 测试**
 
-在 `scan/__tests__/runScan.test.ts` 增加测试，断言运行 scan 后：
+在 `scan/__tests__/runScan.test.ts` 增加测试，断言 scan CLI 只接受显式参数，不读取 `coverage-state/manifest.json` 或 `progress.json`：
 
 - 写出 `coverage-targets.json`、`route-checklist.json`、`pages.json`。
 - `coverage-targets.json.targets[].targetId` 稳定。
 - `route-checklist.json.selectedRoutes[].targetIds` 来自 coverage targets。
-- CLI 运行后 `progress.json.phases.scan.status === "done"`。
-- 写出 `progress.scan.snapshot.json`。
+- CLI 参数包括 `--project-root`、`--out-dir`、`--base-url`、`--target-package`。
+- 输出目录没有 `progress.json`。
 
 示例断言：
 
 ```ts
-expect(readJson(path.join(stateDir, 'progress.json')).phases.scan.status).toBe('done');
-expect(fs.existsSync(path.join(stateDir, 'progress.scan.snapshot.json'))).toBe(true);
+expect(fs.existsSync(path.join(outDir, 'coverage-targets.json'))).toBe(true);
+expect(fs.existsSync(path.join(outDir, 'route-checklist.json'))).toBe(true);
+expect(fs.existsSync(path.join(outDir, 'pages.json'))).toBe(true);
+expect(fs.existsSync(path.join(outDir, 'progress.json'))).toBe(false);
 ```
 
 运行：
@@ -360,16 +443,18 @@ expect(fs.existsSync(path.join(stateDir, 'progress.scan.snapshot.json'))).toBe(t
 yarn workspace scan test --runInBand __tests__/runScan.test.ts
 ```
 
-预期：progress 相关断言失败。
+预期：如果当前 CLI 仍读取 manifest，测试失败。
 
-- [ ] **Step 2：实现 scan 状态更新**
+- [ ] **Step 2：实现纯 scan CLI**
 
-在 `scan/src/index.ts` 的 `main()` 中：
+修改 `scan/src/index.ts`：
 
-- 先 `loadOrCreateProgress(stateDir)`。
-- 成功 `runScan()` 后调用 `markPhaseDone(progress, 'scan', 'apiDiff')`。
-- `atomicWriteJson(stateDir/progress.json, nextProgress)`。
-- `writeProgressSnapshot(stateDir, 'scan', nextProgress)`。
+- 移除 manifest/progress 读取。
+- 支持 `--project-root <path>`，默认 `process.cwd()`。
+- 支持 `--out-dir <path>`，必填。
+- 支持重复 `--target-package <pkg>` 或逗号分隔 `--target-packages <a,b>`。
+- 支持 `--base-url <url>`。
+- 调用 `runScan({ projectRoot, outDir, baseUrl, targetPackages })`。
 
 运行：
 
@@ -404,24 +489,76 @@ yarn workspace scan test --runInBand
 
 预期：通过。
 
-- [ ] **Step 4：提交**
+- [ ] **Step 4：写 workflow run-scan phase 测试**
+
+创建 `workflow/__tests__/runScanPhase.test.ts`：
+
+- 构造临时项目和 `coverage-state/manifest.json`。
+- 调用 `runScanPhase(stateDir, projectRoot)`。
+- 断言 scan artifacts 写到 `coverage-state/`。
+- 断言 `progress.json.phases.scan.status === "done"`。
+- 断言 `progress.scan.snapshot.json` 存在。
+
+运行：
 
 ```bash
-git add scan/src/runScan.ts scan/src/index.ts scan/__tests__/runScan.test.ts
-git commit -m "feat(skill): wire scan into progress state"
+yarn workspace workflow test --runInBand __tests__/runScanPhase.test.ts
+```
+
+预期：失败，模块不存在。
+
+- [ ] **Step 5：实现 workflow scan phase**
+
+实现 `workflow/src/runScanPhase.ts`：
+
+- 读取 manifest。
+- `validateTargetPackages(manifest.runtime.targetPackages)`。
+- `resolveManifestBaseUrl(manifest)`。
+- 调用从 `scan` workspace 导出的 `runScan()`。
+- 成功后更新 progress：scan done，next phase `apiDiff`。
+- 写 `progress.scan.snapshot.json`。
+
+实现 `workflow/src/run-scan-cli.ts`：
+
+- 支持 `--state-dir` 和 `--project-root`。
+- 调用 `runScanPhase()`。
+- stdout 输出 scan summary。
+
+修改 `workflow/package.json` 增加：
+
+```json
+"build": "yarn build:resume && yarn build:run-scan",
+"build:run-scan": "esbuild src/run-scan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/run-scan.js"
+```
+
+运行：
+
+```bash
+yarn workspace workflow test --runInBand __tests__/runScanPhase.test.ts
+yarn workspace workflow build:run-scan
+yarn workspace workflow build
+```
+
+预期：通过，生成 `workflow/dist/run-scan.js`。
+
+- [ ] **Step 6：提交**
+
+```bash
+git add scan/src/runScan.ts scan/src/index.ts scan/__tests__/runScan.test.ts workflow/src/runScanPhase.ts workflow/src/run-scan-cli.ts workflow/__tests__/runScanPhase.test.ts workflow/package.json
+git commit -m "feat(skill): split pure scan from workflow scan phase"
 ```
 
 ## 4. Task 3：API Diff Phase
 
 **Files:**
-- Create: `scan/src/apiDiff.ts`
-- Create: `scan/src/api-diff-cli.ts`
-- Create: `scan/__tests__/apiDiff.test.ts`
-- Modify: `scan/package.json`
+- Create: `workflow/src/apiDiff.ts`
+- Create: `workflow/src/api-diff-cli.ts`
+- Create: `workflow/__tests__/apiDiff.test.ts`
+- Modify: `workflow/package.json`
 
 - [ ] **Step 1：写 apiDiff 纯函数测试**
 
-创建 `scan/__tests__/apiDiff.test.ts`，构造两个临时包：
+创建 `workflow/__tests__/apiDiff.test.ts`，构造两个临时包：
 
 ```text
 baseline/node_modules/@example/ui/lib/Button.d.ts
@@ -459,14 +596,14 @@ export declare function Button(props: ButtonProps): JSX.Element;
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/apiDiff.test.ts
+yarn workspace workflow test --runInBand __tests__/apiDiff.test.ts
 ```
 
 预期：失败，模块不存在。
 
 - [ ] **Step 2：实现 apiDiff**
 
-`scan/src/apiDiff.ts` 实现：
+`workflow/src/apiDiff.ts` 实现：
 
 - 从 `manifest.baseline.worktreePath` 和当前项目 root 定位目标包。
 - 递归查找 `lib/`、`es/`、`dist/`、`types/` 下 `.d.ts`。
@@ -479,7 +616,7 @@ yarn workspace scan test --runInBand __tests__/apiDiff.test.ts
 - 读取 `pages.json`，按 component 名映射影响 route。
 - 写 `api-diff/dts-diff.md`、`api-diff/dts-impact.md`。
 
-`scan/src/api-diff-cli.ts` 实现：
+`workflow/src/api-diff-cli.ts` 实现：
 
 - 解析 `--state-dir`。
 - 读取 manifest/progress。
@@ -490,20 +627,20 @@ yarn workspace scan test --runInBand __tests__/apiDiff.test.ts
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/apiDiff.test.ts
+yarn workspace workflow test --runInBand __tests__/apiDiff.test.ts
 ```
 
 预期：通过。
 
 - [ ] **Step 3：打包 api-diff CLI**
 
-修改 `scan/package.json`：
+修改 `workflow/package.json`：
 
 ```json
 "scripts": {
-  "build": "yarn build:scan && yarn build:resume && yarn build:api-diff",
-  "build:scan": "esbuild src/index.ts --bundle --platform=node --target=node16 --outfile=dist/scan.js",
+  "build": "yarn build:resume && yarn build:run-scan && yarn build:api-diff",
   "build:resume": "esbuild src/resume.ts --bundle --platform=node --target=node16 --outfile=dist/resume.js",
+  "build:run-scan": "esbuild src/run-scan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/run-scan.js",
   "build:api-diff": "esbuild src/api-diff-cli.ts --bundle --platform=node --target=node16 --outfile=dist/api-diff.js",
   "test": "jest"
 }
@@ -512,8 +649,8 @@ yarn workspace scan test --runInBand __tests__/apiDiff.test.ts
 运行：
 
 ```bash
-yarn workspace scan build:api-diff
-node scan/dist/api-diff.js --state-dir /tmp/nonexistent-state
+yarn workspace workflow build:api-diff
+node workflow/dist/api-diff.js --state-dir /tmp/nonexistent-state
 ```
 
 预期：第二条命令失败并输出缺 manifest/progress 的明确错误，不出现 stack trace。
@@ -521,7 +658,7 @@ node scan/dist/api-diff.js --state-dir /tmp/nonexistent-state
 - [ ] **Step 4：提交**
 
 ```bash
-git add scan/src/apiDiff.ts scan/src/api-diff-cli.ts scan/__tests__/apiDiff.test.ts scan/package.json
+git add workflow/src/apiDiff.ts workflow/src/api-diff-cli.ts workflow/__tests__/apiDiff.test.ts workflow/package.json
 git commit -m "feat(skill): add api diff phase"
 ```
 
@@ -683,15 +820,15 @@ git commit -m "feat(skill): capture baseline interaction context"
 ## 6. Task 5：After Runtime Plan 与 Subagent Prompt
 
 **Files:**
-- Create: `scan/src/afterRuntimePlan.ts`
-- Create: `scan/src/after-runtime-plan-cli.ts`
-- Create: `scan/__tests__/afterRuntimePlan.test.ts`
+- Create: `workflow/src/afterRuntimePlan.ts`
+- Create: `workflow/src/after-runtime-plan-cli.ts`
+- Create: `workflow/__tests__/afterRuntimePlan.test.ts`
 - Create: `skill-template/subagent-prompts.md.tpl`
-- Modify: `scan/package.json`
+- Modify: `workflow/package.json`
 
 - [ ] **Step 1：写 after-runtime-plan 测试**
 
-创建 `scan/__tests__/afterRuntimePlan.test.ts`：
+创建 `workflow/__tests__/afterRuntimePlan.test.ts`：
 
 - baseline route 有 `coverage.json.confirmedTargetIds` 非空时，进入 `routes[]`。
 - skipped route 进入 `excluded.skippedRoutes`。
@@ -701,21 +838,21 @@ git commit -m "feat(skill): capture baseline interaction context"
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/afterRuntimePlan.test.ts
+yarn workspace workflow test --runInBand __tests__/afterRuntimePlan.test.ts
 ```
 
 预期：失败，模块不存在。
 
 - [ ] **Step 2：实现 after runtime plan**
 
-`scan/src/afterRuntimePlan.ts` 实现：
+`workflow/src/afterRuntimePlan.ts` 实现：
 
 - 读取 `coverage-targets.json`。
 - 读取 `runtime-state.json` 或 baseline route evidence。
 - 只收集 baseline confirmed route/target。
 - 输出 `after-runtime-plan.json`。
 
-`scan/src/after-runtime-plan-cli.ts` 实现：
+`workflow/src/after-runtime-plan-cli.ts` 实现：
 
 - `--state-dir` 参数。
 - 成功生成 plan 后，确保 progress current phase 为 `afterRuntime`。
@@ -723,20 +860,20 @@ yarn workspace scan test --runInBand __tests__/afterRuntimePlan.test.ts
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/afterRuntimePlan.test.ts
+yarn workspace workflow test --runInBand __tests__/afterRuntimePlan.test.ts
 ```
 
 预期：通过。
 
 - [ ] **Step 3：写 after-runtime subagent prompt 模板**
 
-修改 `scan/package.json`：
+修改 `workflow/package.json`：
 
 ```json
 "scripts": {
-  "build": "yarn build:scan && yarn build:resume && yarn build:api-diff && yarn build:after-runtime-plan",
-  "build:scan": "esbuild src/index.ts --bundle --platform=node --target=node16 --outfile=dist/scan.js",
+  "build": "yarn build:resume && yarn build:run-scan && yarn build:api-diff && yarn build:after-runtime-plan",
   "build:resume": "esbuild src/resume.ts --bundle --platform=node --target=node16 --outfile=dist/resume.js",
+  "build:run-scan": "esbuild src/run-scan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/run-scan.js",
   "build:api-diff": "esbuild src/api-diff-cli.ts --bundle --platform=node --target=node16 --outfile=dist/api-diff.js",
   "build:after-runtime-plan": "esbuild src/after-runtime-plan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/after-runtime-plan.js",
   "test": "jest"
@@ -746,11 +883,11 @@ yarn workspace scan test --runInBand __tests__/afterRuntimePlan.test.ts
 运行：
 
 ```bash
-yarn workspace scan build:after-runtime-plan
-yarn workspace scan build
+yarn workspace workflow build:after-runtime-plan
+yarn workspace workflow build
 ```
 
-预期：通过，并生成 `scan/dist/after-runtime-plan.js`。
+预期：通过，并生成 `workflow/dist/after-runtime-plan.js`。
 
 创建 `skill-template/subagent-prompts.md.tpl`，包含两个 prompt：
 
@@ -770,21 +907,21 @@ yarn workspace scan build
 - [ ] **Step 4：提交**
 
 ```bash
-git add scan/src/afterRuntimePlan.ts scan/src/after-runtime-plan-cli.ts scan/__tests__/afterRuntimePlan.test.ts scan/package.json skill-template/subagent-prompts.md.tpl
+git add workflow/src/afterRuntimePlan.ts workflow/src/after-runtime-plan-cli.ts workflow/__tests__/afterRuntimePlan.test.ts workflow/package.json skill-template/subagent-prompts.md.tpl
 git commit -m "feat(skill): add after runtime planning and prompts"
 ```
 
 ## 7. Task 6：Report Phase
 
 **Files:**
-- Create: `scan/src/report.ts`
-- Create: `scan/src/report-cli.ts`
-- Create: `scan/__tests__/report.test.ts`
-- Modify: `scan/package.json`
+- Create: `workflow/src/report.ts`
+- Create: `workflow/src/report-cli.ts`
+- Create: `workflow/__tests__/report.test.ts`
+- Modify: `workflow/package.json`
 
 - [ ] **Step 1：写 report 测试**
 
-创建 `scan/__tests__/report.test.ts`，构造临时 `coverage-state`：
+创建 `workflow/__tests__/report.test.ts`，构造临时 `coverage-state`：
 
 - `coverage-targets.json`
 - baseline route `coverage.json`
@@ -813,14 +950,14 @@ report/api-impact.json
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/report.test.ts
+yarn workspace workflow test --runInBand __tests__/report.test.ts
 ```
 
 预期：失败，模块不存在。
 
 - [ ] **Step 2：实现 report**
 
-`scan/src/report.ts` 实现：
+`workflow/src/report.ts` 实现：
 
 - 汇总 scan coverage。
 - 汇总 baseline skipped/uncovered/forced。
@@ -828,7 +965,7 @@ yarn workspace scan test --runInBand __tests__/report.test.ts
 - 汇总 build fixes 与 api impact 链接。
 - 写 markdown 与 JSON。
 
-`scan/src/report-cli.ts` 实现：
+`workflow/src/report-cli.ts` 实现：
 
 - `--state-dir` 参数。
 - report 成功后 mark `report` done，currentPhase `done`。
@@ -837,20 +974,20 @@ yarn workspace scan test --runInBand __tests__/report.test.ts
 运行：
 
 ```bash
-yarn workspace scan test --runInBand __tests__/report.test.ts
+yarn workspace workflow test --runInBand __tests__/report.test.ts
 ```
 
 预期：通过。
 
 - [ ] **Step 3：提交**
 
-修改 `scan/package.json`：
+修改 `workflow/package.json`：
 
 ```json
 "scripts": {
-  "build": "yarn build:scan && yarn build:resume && yarn build:api-diff && yarn build:after-runtime-plan && yarn build:report",
-  "build:scan": "esbuild src/index.ts --bundle --platform=node --target=node16 --outfile=dist/scan.js",
+  "build": "yarn build:resume && yarn build:run-scan && yarn build:api-diff && yarn build:after-runtime-plan && yarn build:report",
   "build:resume": "esbuild src/resume.ts --bundle --platform=node --target=node16 --outfile=dist/resume.js",
+  "build:run-scan": "esbuild src/run-scan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/run-scan.js",
   "build:api-diff": "esbuild src/api-diff-cli.ts --bundle --platform=node --target=node16 --outfile=dist/api-diff.js",
   "build:after-runtime-plan": "esbuild src/after-runtime-plan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/after-runtime-plan.js",
   "build:report": "esbuild src/report-cli.ts --bundle --platform=node --target=node16 --outfile=dist/report.js",
@@ -861,16 +998,16 @@ yarn workspace scan test --runInBand __tests__/report.test.ts
 运行：
 
 ```bash
-yarn workspace scan build:report
-yarn workspace scan build
+yarn workspace workflow build:report
+yarn workspace workflow build
 ```
 
-预期：通过，并生成 `scan/dist/report.js`。
+预期：通过，并生成 `workflow/dist/report.js`。
 
 - [ ] **Step 4：提交**
 
 ```bash
-git add scan/src/report.ts scan/src/report-cli.ts scan/__tests__/report.test.ts scan/package.json
+git add workflow/src/report.ts workflow/src/report-cli.ts workflow/__tests__/report.test.ts workflow/package.json
 git commit -m "feat(skill): add final report phase"
 ```
 
@@ -879,7 +1016,7 @@ git commit -m "feat(skill): add final report phase"
 **Files:**
 - Modify: `skill-template/SKILL.md.tpl`
 - Modify: `scripts/build-skill.ts`
-- Modify: `scan/package.json`
+- Modify: `workflow/package.json`
 
 - [ ] **Step 1：更新 SKILL 模板**
 
@@ -898,11 +1035,11 @@ git commit -m "feat(skill): add final report phase"
 `scripts/build-skill.ts` 需要复制：
 
 ```text
-scan/dist/scan.js              -> scripts/scan.js
-scan/dist/resume.js            -> scripts/resume.js
-scan/dist/api-diff.js          -> scripts/api-diff.js
-scan/dist/after-runtime-plan.js -> scripts/after-runtime-plan.js
-scan/dist/report.js            -> scripts/report.js
+workflow/dist/run-scan.js      -> scripts/scan.js
+workflow/dist/resume.js            -> scripts/resume.js
+workflow/dist/api-diff.js          -> scripts/api-diff.js
+workflow/dist/after-runtime-plan.js -> scripts/after-runtime-plan.js
+workflow/dist/report.js            -> scripts/report.js
 panel/dist/index.html          -> scripts/panel/index.html
 recorder/src/*.py              -> scripts/
 skill-template/subagent-prompts.md.tpl -> subagent-prompts.md
@@ -914,6 +1051,7 @@ skill-template/subagent-prompts.md.tpl -> subagent-prompts.md
 
 ```bash
 yarn workspace scan build
+yarn workspace workflow build
 yarn workspace panel build
 yarn build:skill
 ```
@@ -938,7 +1076,7 @@ dist/skills/react-component-upgrade/scripts/panel/index.html
 - [ ] **Step 4：提交**
 
 ```bash
-git add skill-template/SKILL.md.tpl skill-template/subagent-prompts.md.tpl scripts/build-skill.ts scan/package.json
+git add skill-template/SKILL.md.tpl skill-template/subagent-prompts.md.tpl scripts/build-skill.ts workflow/package.json
 git commit -m "feat(skill): orchestrate complete react component upgrade workflow"
 ```
 
