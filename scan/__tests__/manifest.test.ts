@@ -4,30 +4,30 @@ import path from 'path';
 import { loadManifest, resolveStateDir, validateTargetPackages } from '../src/manifest';
 
 describe('manifest helpers', () => {
-  const originalEnv = process.env.COVERAGE_STATE_DIR;
+  const originalEnv = process.env.STATE_DIR;
 
   afterEach(() => {
     if (originalEnv === undefined) {
-      delete process.env.COVERAGE_STATE_DIR;
+      delete process.env.STATE_DIR;
     } else {
-      process.env.COVERAGE_STATE_DIR = originalEnv;
+      process.env.STATE_DIR = originalEnv;
     }
   });
 
   it('resolves state directory with arg taking priority over env and default', () => {
-    process.env.COVERAGE_STATE_DIR = 'env-state';
+    process.env.STATE_DIR = 'env-state';
 
     expect(resolveStateDir('arg-state')).toBe(path.resolve('arg-state'));
   });
 
   it('resolves state directory from env before default', () => {
-    process.env.COVERAGE_STATE_DIR = 'env-state';
+    process.env.STATE_DIR = 'env-state';
 
     expect(resolveStateDir()).toBe(path.resolve('env-state'));
   });
 
   it('defaults state directory to coverage-state', () => {
-    delete process.env.COVERAGE_STATE_DIR;
+    delete process.env.STATE_DIR;
 
     expect(resolveStateDir()).toBe(path.resolve('coverage-state'));
   });

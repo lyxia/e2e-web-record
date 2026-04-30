@@ -144,9 +144,10 @@ export default function coverageMarkerPlugin({
 
         const filename = state.filename ?? '';
         const cwd = state.cwd ?? process.cwd();
-        const relativeFilename = path.relative(cwd, filename);
+        const relativeFilename = path.relative(cwd, filename).split(path.sep).join('/');
         const line = jsxPath.node.loc?.start.line ?? 0;
-        const id = `${relativeFilename}#${importedComponent.importedName}#L${line}`;
+        const column = (jsxPath.node.loc?.start.column ?? 0) + 1;
+        const id = `${relativeFilename}#${importedComponent.importedName}#L${line}#C${column}`;
         const original = jsxPath.node;
 
         state.wrappedNodes.add(original);

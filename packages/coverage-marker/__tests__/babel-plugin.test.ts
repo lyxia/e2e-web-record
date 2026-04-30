@@ -20,14 +20,14 @@ function transform(source: string, targetPackages: string[] = ['@target/ui']) {
   return result?.code ?? '';
 }
 
-test('target JSX is wrapped and id matches src/x.tsx#Widget#L<n>', () => {
+test('target JSX is wrapped and id matches src/x.tsx#Widget#L<n>#C<n>', () => {
   const code = transform([
     "import { Widget } from '@target/ui';",
     '',
     'export const App = () => <Widget tone="blue" />;',
   ].join('\n'));
 
-  expect(code).toContain('<__CoverageMark id="src/x.tsx#Widget#L3">');
+  expect(code).toContain('<__CoverageMark id="src/x.tsx#Widget#L3#C26">');
   expect(code).toContain('<Widget tone="blue" />');
 });
 
@@ -58,7 +58,7 @@ test('alias preserves importedName', () => {
     'export const App = () => <PrimaryButton />;',
   ].join('\n'));
 
-  expect(code).toContain('<__CoverageMark id="src/x.tsx#Button#L3">');
+  expect(code).toContain('<__CoverageMark id="src/x.tsx#Button#L3#C26">');
 });
 
 test('type-only import no-op', () => {
@@ -127,8 +127,8 @@ test('already wrapped JSX is not recursively wrapped and nested target JSX wraps
     ');',
   ].join('\n'));
 
-  expect(code.match(/src\/x\.tsx#Panel#L5/g)).toHaveLength(1);
-  expect(code.match(/src\/x\.tsx#Widget#L6/g)).toHaveLength(1);
+  expect(code.match(/src\/x\.tsx#Panel#L5#C3/g)).toHaveLength(1);
+  expect(code.match(/src\/x\.tsx#Widget#L6#C5/g)).toHaveLength(1);
   expect(code).toContain('<__CoverageMark id="manual">');
   expect(code).not.toContain('src/x.tsx#Widget#L7');
 });
@@ -155,7 +155,7 @@ test('existing aliased runtime import is reused consistently', () => {
     'export const App = () => <><Mark id="manual"><span /></Mark><Widget /></>;',
   ].join('\n'));
 
-  expect(code).toContain('<Mark id="src/x.tsx#Widget#L4">');
+  expect(code).toContain('<Mark id="src/x.tsx#Widget#L4#C61">');
   expect(code).not.toContain('<__CoverageMark id=');
   expect(code).not.toContain('import { __CoverageMark }');
 });
@@ -180,7 +180,18 @@ test('runtime alias is detected before JSX regardless of source order', () => {
     "import { __CoverageMark as Mark } from '@odc/coverage-marker/runtime';",
   ].join('\n'));
 
-  expect(code).toContain('<Mark id="src/x.tsx#Widget#L3">');
+  expect(code).toContain('<Mark id="src/x.tsx#Widget#L3#C26">');
   expect(code).not.toContain('<__CoverageMark id=');
   expect(code).not.toContain('import { __CoverageMark }');
+});
+
+test('same-line duplicate JSX call sites receive distinct column ids', () => {
+  const code = transform([
+    "import { Widget } from '@target/ui';",
+    '',
+    'export const App = () => <><Widget /><Widget /></>;',
+  ].join('\n'));
+
+  expect(code).toContain('src/x.tsx#Widget#L3#C28');
+  expect(code).toContain('src/x.tsx#Widget#L3#C38');
 });

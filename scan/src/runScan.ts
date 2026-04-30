@@ -23,9 +23,15 @@ export interface RunScanSummary {
 
 interface CoverageTarget extends JsxCallSite {
   targetId: string;
-  routeCandidates: string[];
+  routeCandidates: RouteCandidate[];
   status: 'undetected';
   confirmedEvidenceId: null;
+}
+
+interface RouteCandidate {
+  routeId: string;
+  path: string;
+  url: string;
 }
 
 interface RouteCoverage {
@@ -45,7 +51,7 @@ export function runScan(options: RunScanOptions): RunScanSummary {
   const routes = parseRouter(routeFiles);
   const importGraph = buildImportGraph(sourceFiles, projectRoot);
   const targets = collectTargets(sourceFiles, projectRoot, options.targetPackages);
-  const routeCoverage = buildRouteCoverage(routes, importGraph, projectRoot, targets);
+  const routeCoverage = buildRouteCoverage(routes, importGraph, projectRoot, targets, options.baseUrl);
   const cover = greedyCover(
     routeCoverage.map((route) => ({ routeId: route.routeId, targetIds: route.targetIds })),
     targets.map((target) => target.targetId),
@@ -107,7 +113,7 @@ function collectTargets(sourceFiles: string[], projectRoot: string, targetPackag
     for (const site of findJsxCallSites(sourceFile, targetPackages, relativeFile)) {
       targets.push({
         ...site,
-        targetId: `${relativeFile}#${site.importedName}#L${site.line}`,
+        targetId: `${relativeFile}#${site.importedName}#L${site.line}#C${site.column}`,
         routeCandidates: [],
         status: 'undetected',
         confirmedEvidenceId: null,
@@ -123,6 +129,7 @@ function buildRouteCoverage(
   importGraph: ReturnType<typeof buildImportGraph>,
   projectRoot: string,
   targets: CoverageTarget[],
+  baseUrl?: string,
 ): RouteCoverage[] {
   const targetsByFile = new Map<string, CoverageTarget[]>();
   for (const target of targets) {
@@ -132,26 +139,36 @@ function buildRouteCoverage(
     targetsByFile.set(absoluteFile, fileTargets);
   }
 
+  const routeIdCounts = new Map<string, number>();
+
   return routes.map((route) => {
     const componentFile = resolveImport(route.componentImportPath, route.file, projectRoot);
     const reachable = componentFile ? walkReachable(importGraph, componentFile) : new Set<string>();
     const targetIds: string[] = [];
+    const routeId = uniqueRouteId(pageIdFromRoutePath(route.path), routeIdCounts);
+    const routeCandidate = { routeId, path: route.path, url: joinUrl(baseUrl, route.path) };
 
     for (const file of reachable) {
       for (const target of targetsByFile.get(file) ?? []) {
         targetIds.push(target.targetId);
-        target.routeCandidates.push(route.path);
+        target.routeCandidates.push(routeCandidate);
       }
     }
 
     targetIds.sort();
     return {
       route,
-      routeId: pageIdFromRoutePath(route.path),
+      routeId,
       componentFile,
       targetIds,
     };
   });
+}
+
+function uniqueRouteId(baseRouteId: string, counts: Map<string, number>): string {
+  const current = counts.get(baseRouteId) ?? 0;
+  counts.set(baseRouteId, current + 1);
+  return current === 0 ? baseRouteId : `${baseRouteId}-${current + 1}`;
 }
 
 function buildPage(routeCoverage: RouteCoverage, targets: CoverageTarget[], projectRoot: string, baseUrl?: string) {

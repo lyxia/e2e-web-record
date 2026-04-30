@@ -18,6 +18,7 @@ describe('buildImportGraph', () => {
       'src/components/Box/index.tsx',
       'src/components/Inline.tsx',
       'src/components/Relative.ts',
+      'src/components/index.ts',
     ]);
   });
 
@@ -28,8 +29,10 @@ describe('buildImportGraph', () => {
 
     expect(reachable).toEqual([
       'src/components/Box/index.tsx',
+      'src/components/Card.tsx',
       'src/components/Inline.tsx',
       'src/components/Relative.ts',
+      'src/components/index.ts',
       'src/pages/Page.tsx',
     ]);
   });

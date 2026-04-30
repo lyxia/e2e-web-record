@@ -71,7 +71,7 @@ function parseRouteObject(
       if (ts.isIdentifier(property.initializer)) {
         componentImportPath = lazyVariables.get(property.initializer.text) ?? null;
       } else {
-        componentImportPath = getLazyImportPath(property.initializer);
+        componentImportPath = getRouteComponentImportPath(property.initializer);
       }
     }
   }
@@ -97,6 +97,14 @@ function getLazyImportPath(expression: ts.Expression): string | null {
   }
 
   return findDynamicImportPath(firstArg.body);
+}
+
+function getRouteComponentImportPath(expression: ts.Expression): string | null {
+  return getLazyImportPath(expression) ?? (
+    (ts.isArrowFunction(expression) || ts.isFunctionExpression(expression))
+      ? findDynamicImportPath(expression.body)
+      : null
+  );
 }
 
 function findDynamicImportPath(node: ts.Node): string | null {

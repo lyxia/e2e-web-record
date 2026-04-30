@@ -33,23 +33,24 @@ describe('runScan', () => {
     expect(targets.targets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          targetId: 'src/pages/P1.tsx#Widget#L4',
+          targetId: 'src/pages/P1.tsx#Widget#L4#C10',
           packageName: '@example/ui',
           importedName: 'Widget',
           localName: 'Widget',
           file: 'src/pages/P1.tsx',
           line: 4,
+          column: 10,
           kind: 'runtime-jsx',
-          routeCandidates: ['/p1'],
+          routeCandidates: [{ routeId: 'p1', path: '/p1', url: 'http://x/p1' }],
           status: 'undetected',
           confirmedEvidenceId: null,
         }),
         expect.objectContaining({
-          targetId: 'src/pages/P2.tsx#Modal#L4',
-          routeCandidates: ['/p2'],
+          targetId: 'src/pages/P2.tsx#Modal#L4#C10',
+          routeCandidates: [{ routeId: 'p2', path: '/p2', url: 'http://x/p2' }],
         }),
         expect.objectContaining({
-          targetId: 'src/components/Unused.tsx#Tooltip#L4',
+          targetId: 'src/components/Unused.tsx#Tooltip#L4#C10',
           routeCandidates: [],
         }),
       ]),
@@ -62,7 +63,7 @@ describe('runScan', () => {
         routeId: 'p1',
         path: '/p1',
         url: 'http://x/p1',
-        targetIds: ['src/pages/P1.tsx#Widget#L4'],
+        targetIds: ['src/pages/P1.tsx#Widget#L4#C10'],
         confirmedCount: 0,
         targetCount: 1,
       },
@@ -70,12 +71,12 @@ describe('runScan', () => {
         routeId: 'p2',
         path: '/p2',
         url: 'http://x/p2',
-        targetIds: ['src/pages/P2.tsx#Modal#L4'],
+        targetIds: ['src/pages/P2.tsx#Modal#L4#C10'],
         confirmedCount: 0,
         targetCount: 1,
       },
     ]);
-    expect(checklist.unmappedTargetIds).toEqual(['src/components/Unused.tsx#Tooltip#L4']);
+    expect(checklist.unmappedTargetIds).toEqual(['src/components/Unused.tsx#Tooltip#L4#C10']);
 
     const pages = readJson<any>(path.join(outDir, 'pages.json'));
     expect(pages).toMatchObject({

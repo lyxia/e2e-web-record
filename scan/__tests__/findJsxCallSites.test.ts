@@ -20,6 +20,7 @@ describe('findJsxCallSites', () => {
         localName: 'Button',
         file: 'src/App.tsx',
         line: 2,
+        column: 26,
         kind: 'runtime-jsx',
       },
     ]);
@@ -79,8 +80,19 @@ describe('findJsxCallSites', () => {
         localName: 'UI',
         file: 'src/App.tsx',
         line: 2,
+        column: 26,
         kind: 'runtime-jsx',
       },
     ]);
+  });
+
+  it('distinguishes same-line duplicate call sites by column', () => {
+    const sites = findJsxCallSites(
+      source("import { Button } from '@example/ui';\nexport const App = () => <><Button /><Button /></>;"),
+      ['@example/ui'],
+      'src/App.tsx',
+    );
+
+    expect(sites.map((site) => site.column)).toEqual([28, 38]);
   });
 });

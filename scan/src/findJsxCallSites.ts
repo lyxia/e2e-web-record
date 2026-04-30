@@ -7,6 +7,7 @@ export interface JsxCallSite {
   localName: string;
   file: string;
   line: number;
+  column: number;
   kind: 'runtime-jsx';
 }
 
@@ -28,13 +29,14 @@ export function findJsxCallSites(
       const targetImport = localName ? importsByLocalName.get(localName) : undefined;
 
       if (targetImport) {
-        const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
         sites.push({
           packageName: targetImport.packageName,
           importedName: targetImport.importedName,
           localName: targetImport.localName,
           file,
           line: line + 1,
+          column: character + 1,
           kind: 'runtime-jsx',
         });
       }

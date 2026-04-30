@@ -76,6 +76,10 @@ function collectImportSpecifiers(sourceFile: ts.SourceFile): string[] {
       specifiers.push(node.moduleSpecifier.text);
     }
 
+    if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      specifiers.push(node.moduleSpecifier.text);
+    }
+
     if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
       const [specifier] = node.arguments;
       if (specifier && ts.isStringLiteralLike(specifier)) {

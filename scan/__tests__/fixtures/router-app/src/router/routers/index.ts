@@ -5,4 +5,5 @@ const PaperIndex = lazy(() => import('@/pages/Paper/Index'));
 export const routes = [
   { path: '/paper', component: PaperIndex },
   { path: '/course', component: lazy(() => import('@/pages/Course/List')) },
+  { path: '/direct', component: () => import('@/pages/Direct') },
 ];

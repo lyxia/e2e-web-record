@@ -23,4 +23,14 @@ describe('parseRouter', () => {
       file: path.join(fixtureRoot, 'src/router/routers/index.ts'),
     });
   });
+
+  it('extracts direct dynamic component route imports', () => {
+    const routes = parseRouter([path.join(fixtureRoot, 'src/router/routers/index.ts')]);
+
+    expect(routes).toContainEqual({
+      path: '/direct',
+      componentImportPath: '@/pages/Direct',
+      file: path.join(fixtureRoot, 'src/router/routers/index.ts'),
+    });
+  });
 });

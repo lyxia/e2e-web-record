@@ -9,7 +9,7 @@ export interface CoverageManifest {
 }
 
 export function resolveStateDir(argStateDir?: string): string {
-  return path.resolve(argStateDir || process.env.COVERAGE_STATE_DIR || 'coverage-state');
+  return path.resolve(argStateDir || process.env.STATE_DIR || 'coverage-state');
 }
 
 export function loadManifest(stateDir: string): CoverageManifest {
