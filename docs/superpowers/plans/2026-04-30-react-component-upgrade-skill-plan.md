@@ -1022,11 +1022,19 @@ git commit -m "feat(skill): add final report phase"
 
 `skill-template/SKILL.md.tpl` 必须包含：
 
-- 激活后第一步运行 `resume.js`。
+- 激活后第一步运行 `scripts/workflow/resume.js`。
 - Phase 顺序：bootstrap、scan、api-diff、build、baseline-coverage、after-runtime、report。
 - 不兼容旧 `e2e-xui-pro/`。
 - Phase baseline-coverage 不派 subagent。
 - Phase build / after-runtime 使用 subagent prompts。
+- 所有命令路径使用功能子目录：
+  - `node $SKILL_DIR/scripts/workflow/resume.js`
+  - `node $SKILL_DIR/scripts/workflow/scan.js`
+  - `node $SKILL_DIR/scripts/workflow/api-diff.js`
+  - `node $SKILL_DIR/scripts/workflow/after-runtime-plan.js`
+  - `node $SKILL_DIR/scripts/workflow/report.js`
+  - `python3 $SKILL_DIR/scripts/recorder/recorder.py`
+  - panel HTML 路径为 `$SKILL_DIR/scripts/panel/index.html`
 - checkpoint：scan 后、build needs-decision、baseline 完成后、after needs-decision、report 后。
 - main agent 是 `progress.json` 唯一 writer。
 
@@ -1035,13 +1043,13 @@ git commit -m "feat(skill): add final report phase"
 `scripts/build-skill.ts` 需要复制：
 
 ```text
-workflow/dist/run-scan.js      -> scripts/scan.js
-workflow/dist/resume.js            -> scripts/resume.js
-workflow/dist/api-diff.js          -> scripts/api-diff.js
-workflow/dist/after-runtime-plan.js -> scripts/after-runtime-plan.js
-workflow/dist/report.js            -> scripts/report.js
+workflow/dist/run-scan.js           -> scripts/workflow/scan.js
+workflow/dist/resume.js             -> scripts/workflow/resume.js
+workflow/dist/api-diff.js           -> scripts/workflow/api-diff.js
+workflow/dist/after-runtime-plan.js -> scripts/workflow/after-runtime-plan.js
+workflow/dist/report.js             -> scripts/workflow/report.js
 panel/dist/index.html          -> scripts/panel/index.html
-recorder/src/*.py              -> scripts/
+recorder/src/*.py              -> scripts/recorder/
 skill-template/subagent-prompts.md.tpl -> subagent-prompts.md
 ```
 
@@ -1061,15 +1069,15 @@ yarn build:skill
 ```text
 dist/skills/react-component-upgrade/SKILL.md
 dist/skills/react-component-upgrade/subagent-prompts.md
-dist/skills/react-component-upgrade/scripts/scan.js
-dist/skills/react-component-upgrade/scripts/resume.js
-dist/skills/react-component-upgrade/scripts/api-diff.js
-dist/skills/react-component-upgrade/scripts/after-runtime-plan.js
-dist/skills/react-component-upgrade/scripts/report.js
-dist/skills/react-component-upgrade/scripts/recorder.py
-dist/skills/react-component-upgrade/scripts/runner.py
-dist/skills/react-component-upgrade/scripts/action_timeline.py
-dist/skills/react-component-upgrade/scripts/evidence.py
+dist/skills/react-component-upgrade/scripts/workflow/scan.js
+dist/skills/react-component-upgrade/scripts/workflow/resume.js
+dist/skills/react-component-upgrade/scripts/workflow/api-diff.js
+dist/skills/react-component-upgrade/scripts/workflow/after-runtime-plan.js
+dist/skills/react-component-upgrade/scripts/workflow/report.js
+dist/skills/react-component-upgrade/scripts/recorder/recorder.py
+dist/skills/react-component-upgrade/scripts/recorder/runner.py
+dist/skills/react-component-upgrade/scripts/recorder/action_timeline.py
+dist/skills/react-component-upgrade/scripts/recorder/evidence.py
 dist/skills/react-component-upgrade/scripts/panel/index.html
 ```
 
@@ -1125,7 +1133,7 @@ cat > "$tmpdir/coverage-state/manifest.json" <<'JSON'
   }
 }
 JSON
-(cd "$tmpdir" && node /Users/liuyunxia/Documents/odc_workspace/scepter-smart-trains-xui-pro-update/component-upgrade-coverage-recorder/dist/skills/react-component-upgrade/scripts/resume.js --state-dir coverage-state)
+(cd "$tmpdir" && node /Users/liuyunxia/Documents/odc_workspace/scepter-smart-trains-xui-pro-update/component-upgrade-coverage-recorder/dist/skills/react-component-upgrade/scripts/workflow/resume.js --state-dir coverage-state)
 ```
 
 预期 stdout 包含：
