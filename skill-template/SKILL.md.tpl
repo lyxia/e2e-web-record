@@ -303,10 +303,19 @@ In a separate terminal:
 
 ```bash
 cd <after-project>
-python3 $SKILL_DIR/scripts/recorder/recorder.py --state-dir coverage-state
+python3 $SKILL_DIR/scripts/recorder/recorder.py \
+  --state-dir coverage-state \
+  --panel-html $SKILL_DIR/scripts/panel/index.html
 # resume from a specific route after a crash:
-python3 $SKILL_DIR/scripts/recorder/recorder.py --state-dir coverage-state --route course-center
+python3 $SKILL_DIR/scripts/recorder/recorder.py \
+  --state-dir coverage-state \
+  --panel-html $SKILL_DIR/scripts/panel/index.html \
+  --route course-center
 ```
+
+`--panel-html` is required and must point to an existing file. The
+recorder no longer guesses; the skill caller is responsible for naming
+the panel location.
 
 The recorder reads the after project's manifest, opens two Chromium windows
 (business app + panel), and writes evidence under

@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import os
+import sys
 from pathlib import Path
 
 from panel_state import compute_panel_state
@@ -62,33 +63,42 @@ def dry_run(state_dir: Path):
     atomic_write_json(state_dir / "runtime-state.json", runtime_state)
 
 
+def resolve_panel_html_arg(value):
+    """Validate the --panel-html argument and return an absolute Path.
+
+    Required for live recording. Errors out clearly if the file is missing
+    so the caller does not silently fall back to a wrong location.
+    """
+
+    if not value:
+        raise SystemExit(
+            "recorder.py: --panel-html is required (set to <skill>/scripts/panel/index.html)"
+        )
+    panel_html = Path(value).expanduser().resolve()
+    if not panel_html.is_file():
+        raise SystemExit(f"recorder.py: --panel-html path does not exist or is not a file: {panel_html}")
+    return panel_html
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--state-dir", default=None)
     parser.add_argument("--route", default=None, help="Resume from this routeId.")
+    parser.add_argument(
+        "--panel-html",
+        default=None,
+        help="Absolute path to the recorder panel HTML (skill: $SKILL_DIR/scripts/panel/index.html).",
+    )
     args = parser.parse_args(argv)
 
     state_dir = Path(args.state_dir or os.environ.get("STATE_DIR", "coverage-state")).resolve()
-    panel_html = resolve_panel_html()
     if args.dry_run:
         dry_run(state_dir)
         return
 
+    panel_html = resolve_panel_html_arg(args.panel_html)
     asyncio.run(run_recorder(state_dir, panel_html, start_route_id=args.route))
-
-
-def resolve_panel_html():
-    here = Path(__file__).resolve()
-    candidates = [
-        here.parent / "panel" / "index.html",
-        here.parents[2] / "panel" / "dist" / "index.html",
-        here.parents[2] / "panel" / "index.html",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
-    return candidates[0].resolve()
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import json
 import pytest
 
 from recorder import dry_run
-from recorder import resolve_panel_html
+from recorder import resolve_panel_html_arg
 from runner import _read_marks
 from runner import _runtime_state_baseline
 from runner import _runtime_state_done
@@ -174,6 +174,20 @@ async def test_read_marks_collects_markers_from_all_frames():
     assert await _read_marks(page) == ["top", "child-a", "child-b"]
 
 
-def test_resolve_panel_html_finds_repo_panel_dist():
-    assert resolve_panel_html().name == "index.html"
-    assert resolve_panel_html().exists()
+def test_resolve_panel_html_arg_returns_absolute_path_when_file_exists(tmp_path):
+    panel = tmp_path / "panel" / "index.html"
+    panel.parent.mkdir(parents=True)
+    panel.write_text("<html></html>", encoding="utf-8")
+    resolved = resolve_panel_html_arg(str(panel))
+    assert resolved == panel.resolve()
+
+
+def test_resolve_panel_html_arg_errors_when_value_missing():
+    with pytest.raises(SystemExit):
+        resolve_panel_html_arg(None)
+
+
+def test_resolve_panel_html_arg_errors_when_path_does_not_exist(tmp_path):
+    missing = tmp_path / "panel" / "nope.html"
+    with pytest.raises(SystemExit):
+        resolve_panel_html_arg(str(missing))
