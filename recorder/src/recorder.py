@@ -65,15 +65,17 @@ def dry_run(state_dir: Path):
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--state-dir", default=None)
+    parser.add_argument("--route", default=None, help="Resume from this routeId.")
     args = parser.parse_args(argv)
 
-    state_dir = Path(os.environ.get("STATE_DIR", "coverage-state")).resolve()
+    state_dir = Path(args.state_dir or os.environ.get("STATE_DIR", "coverage-state")).resolve()
     panel_html = resolve_panel_html()
     if args.dry_run:
         dry_run(state_dir)
         return
 
-    asyncio.run(run_recorder(state_dir, panel_html))
+    asyncio.run(run_recorder(state_dir, panel_html, start_route_id=args.route))
 
 
 def resolve_panel_html():

@@ -11,14 +11,14 @@ export function App() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [skipping, setSkipping] = useState(false);
-  const [routeActionReason, setRouteActionReason] = useState('');
+  const [routeNote, setRouteNote] = useState('');
 
   useEffect(() => {
     return subscribePanelState(setState);
   }, []);
 
   useEffect(() => {
-    setRouteActionReason('');
+    setRouteNote('');
     setConfirmError(null);
   }, [state?.currentRoutePath]);
 
@@ -36,19 +36,21 @@ export function App() {
       return;
     }
 
-    let reason: string | undefined;
+    let note: string | undefined;
     if (state.currentRouteRemaining.length > 0) {
-      if (!routeActionReason.trim()) {
-        setConfirmError('Force confirm requires a reason while remaining targets exist.');
+      if (!routeNote.trim()) {
+        setConfirmError('Force confirm requires a note while remaining targets exist.');
         return;
       }
-      reason = routeActionReason.trim();
+      note = routeNote.trim();
+    } else if (routeNote.trim()) {
+      note = routeNote.trim();
     }
 
     setConfirming(true);
     setConfirmError(null);
     try {
-      await confirmRoute(reason);
+      await confirmRoute(note);
     } catch (error) {
       setConfirmError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -62,15 +64,15 @@ export function App() {
       setConfirmError('Recorder skip handler is not ready.');
       return;
     }
-    if (!routeActionReason.trim()) {
-      setConfirmError('Skip requires a reason.');
+    if (!routeNote.trim()) {
+      setConfirmError('Skip requires a note.');
       return;
     }
 
     setSkipping(true);
     setConfirmError(null);
     try {
-      await skipRoute(routeActionReason.trim());
+      await skipRoute(routeNote.trim());
     } catch (error) {
       setConfirmError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -105,9 +107,9 @@ export function App() {
         </ul>
         {state.currentRoutePath ? (
           <textarea
-            value={routeActionReason}
-            onChange={(event) => setRouteActionReason(event.target.value)}
-            placeholder="Reason required for force confirm or skip"
+            value={routeNote}
+            onChange={(event) => setRouteNote(event.target.value)}
+            placeholder="Optional note; required when forcing confirm or skipping"
             rows={3}
             style={styles.reasonInput}
           />

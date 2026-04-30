@@ -23,8 +23,8 @@ export interface PanelState {
 declare global {
   interface Window {
     updatePanel?: (state: PanelState) => void;
-    confirmRoute?: (reason?: string) => Promise<void>;
-    skipRoute?: (reason: string) => Promise<void>;
+    confirmRoute?: (routeNote?: string) => Promise<void>;
+    skipRoute?: (routeNote: string) => Promise<void>;
   }
 }
 
