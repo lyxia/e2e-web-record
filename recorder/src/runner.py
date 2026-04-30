@@ -56,20 +56,37 @@ async def run_recorder(state_dir: Path, panel_html: Path):
     runtime = manifest.get("runtime", {})
     profile = runtime.get("playwrightProfile") or str(state_dir / ".playwright-profile")
     proxy = runtime.get("proxy")
-    launch_options = {"headless": False}
+    app_width = int(runtime.get("appWindowWidth", 1100))
+    app_height = int(runtime.get("appWindowHeight", 900))
+    panel_width = int(runtime.get("panelWindowWidth", 520))
+    panel_height = int(runtime.get("panelWindowHeight", app_height))
+
+    app_launch_options = {
+        "headless": False,
+        "args": [
+            "--ignore-certificate-errors",
+            *build_window_args(x=0, y=0, width=app_width, height=app_height),
+        ],
+        "viewport": {"width": app_width, "height": app_height},
+    }
     if proxy:
-        launch_options["proxy"] = {"server": proxy}
-    launch_options["args"] = ["--ignore-certificate-errors"]
-    launch_options["viewport"] = {"width": 1280, "height": 900}
+        app_launch_options["proxy"] = {"server": proxy}
+
+    panel_launch_options = {
+        "headless": False,
+        "args": build_window_args(x=app_width, y=0, width=panel_width, height=panel_height),
+    }
 
     cur_idx = 0
     evidence_idx = 1
     done = False
 
     async with async_playwright() as playwright:
-        ctx = await playwright.chromium.launch_persistent_context(profile, **launch_options)
-        page_app = await ctx.new_page()
-        page_panel = await ctx.new_page()
+        ctx_app = await playwright.chromium.launch_persistent_context(profile, **app_launch_options)
+        browser_panel = await playwright.chromium.launch(**panel_launch_options)
+        ctx_panel = await browser_panel.new_context(viewport={"width": panel_width, "height": panel_height})
+        page_app = ctx_app.pages[0] if ctx_app.pages else await ctx_app.new_page()
+        page_panel = await ctx_panel.new_page()
 
         async def on_confirm():
             nonlocal cur_idx, done, evidence_idx
@@ -152,7 +169,13 @@ async def run_recorder(state_dir: Path, panel_html: Path):
                 state["phase"] = "done"
                 state["lastUpdate"] = iso_now()
                 atomic_write_json(current_state_path, state)
-            await ctx.close()
+            await ctx_panel.close()
+            await browser_panel.close()
+            await ctx_app.close()
+
+
+def build_window_args(*, x: int, y: int, width: int, height: int):
+    return [f"--window-position={x},{y}", f"--window-size={width},{height}"]
 
 
 async def _read_marks(page):

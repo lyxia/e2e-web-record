@@ -2,6 +2,7 @@ import json
 
 from recorder import dry_run
 from recorder import resolve_panel_html
+from runner import build_window_args
 from runner import route_confirmed_target_ids
 
 
@@ -90,6 +91,13 @@ def test_confirm_filters_detected_markers_to_current_route_targets():
     route = {"targetIds": ["route-a", "route-b"]}
 
     assert route_confirmed_target_ids(route, ["layout-x", "route-a", "route-b"]) == ["route-a", "route-b"]
+
+
+def test_build_window_args_positions_independent_chrome_windows():
+    assert build_window_args(x=1100, y=0, width=520, height=900) == [
+        "--window-position=1100,0",
+        "--window-size=520,900",
+    ]
 
 
 def test_resolve_panel_html_finds_repo_panel_dist():

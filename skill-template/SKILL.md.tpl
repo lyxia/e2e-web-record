@@ -71,9 +71,11 @@ node $SKILL_DIR/scripts/scan.js
 # 2. 起 dev server（COVERAGE_MODE 触发 babel 插件）
 COVERAGE_MODE=1 BROWSER=none yarn start
 
-# 3. 起 recorder（自动开两窗口：业务页 + 面板）
+# 3. 起 recorder（自动开两个独立窗口：左业务页 + 右面板）
 python3 $SKILL_DIR/scripts/recorder.py
 ```
+
+recorder 不会把业务页放进 iframe，也不会改业务 DOM。业务页是 top-level 页面；panel 是独立 Chromium 窗口，默认排在业务窗口右侧。确认路由时保存业务页 full-page 截图。
 
 ## Resume 协议
 
