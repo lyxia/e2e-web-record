@@ -70,7 +70,23 @@ node $SKILL_DIR/scripts/scan.js
 
 # 2. 起 dev server（COVERAGE_MODE 触发 babel 插件）
 COVERAGE_MODE=1 BROWSER=none yarn start
+```
 
+## 进入 recorder 前的强制验证
+
+启动 recorder 前，必须验证 `@odc/coverage-marker` 已在业务页运行时生效。不要只凭 scan 有目标就继续。
+
+验证方式：在浏览器访问一个待测路由，操作页面直到能看到至少一个目标组件，然后在业务页 Console 执行：
+
+```js
+Array.from(window.__coverageMark__ || [])
+```
+
+通过标准：返回数组里至少有一个当前路由实际触发的 target id，且 id 能对应到 `<state-dir>/coverage-targets.json` 里的目标。
+
+失败标准：返回空数组，或只有与当前操作无关的目标。此时必须先修复 `@odc/coverage-marker` 注入问题，再进入 recorder；否则右侧面板无法可靠检测组件触达。
+
+```bash
 # 3. 起 recorder（自动开两个独立窗口：左业务页 + 右面板）
 python3 $SKILL_DIR/scripts/recorder.py
 ```
