@@ -1,0 +1,80 @@
+import * as childProcess from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+
+type PackageJson = {
+  version?: string;
+};
+
+const rootDir = path.resolve(__dirname, "..");
+const skillDir = path.join(rootDir, "dist", "skills", "react-component-upgrade");
+const skillScriptsDir = path.join(skillDir, "scripts");
+
+function run(command: string, args: string[]): void {
+  const display = [command].concat(args).join(" ");
+  console.log("$ " + display);
+  childProcess.execFileSync(command, args, {
+    cwd: rootDir,
+    stdio: "inherit",
+  });
+}
+
+function readJson<T>(filePath: string): T {
+  return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+}
+
+function copyFile(from: string, to: string): void {
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+}
+
+function renderSkillTemplate(): void {
+  const coverageMarkerPackage = readJson<PackageJson>(
+    path.join(rootDir, "packages", "coverage-marker", "package.json")
+  );
+  if (!coverageMarkerPackage.version) {
+    throw new Error("packages/coverage-marker/package.json is missing version");
+  }
+
+  const templatePath = path.join(rootDir, "skill-template", "SKILL.md.tpl");
+  const template = fs.readFileSync(templatePath, "utf8");
+  const rendered = template.replace(
+    /\{\{coverageMarkerVersion\}\}/g,
+    coverageMarkerPackage.version
+  );
+
+  if (rendered.indexOf("@your-org") !== -1) {
+    throw new Error("Rendered SKILL.md contains @your-org placeholder");
+  }
+
+  fs.writeFileSync(path.join(skillDir, "SKILL.md"), rendered);
+}
+
+function buildSkill(): void {
+  fs.rmSync(skillDir, { recursive: true, force: true });
+  fs.mkdirSync(skillScriptsDir, { recursive: true });
+
+  run("yarn", ["workspace", "@odc/coverage-marker", "build"]);
+  run("yarn", ["workspace", "scan", "build"]);
+  copyFile(
+    path.join(rootDir, "scan", "dist", "scan.js"),
+    path.join(skillScriptsDir, "scan.js")
+  );
+
+  run("yarn", ["workspace", "panel", "build"]);
+  copyFile(
+    path.join(rootDir, "panel", "dist", "index.html"),
+    path.join(skillScriptsDir, "panel", "index.html")
+  );
+
+  ["recorder.py", "runner.py", "panel_state.py"].forEach((fileName) => {
+    copyFile(
+      path.join(rootDir, "recorder", "src", fileName),
+      path.join(skillScriptsDir, fileName)
+    );
+  });
+
+  renderSkillTemplate();
+}
+
+buildSkill();
