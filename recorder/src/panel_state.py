@@ -8,7 +8,7 @@ def compute_panel_state(
 ):
     target_by_id = {target["targetId"]: target for target in targets}
     detected_ids = set(detected_target_ids)
-    confirmed_ids = set(confirmed_target_ids)
+    confirmed_ids = set(confirmed_target_ids) & set(target_by_id)
     route_target_ids = list(current_route.get("targetIds", [])) if current_route else []
 
     current_detected_ids = [

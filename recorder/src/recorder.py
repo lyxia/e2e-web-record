@@ -68,12 +68,25 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     state_dir = Path(os.environ.get("STATE_DIR", "coverage-state")).resolve()
-    panel_html = (Path(__file__).parent / "panel" / "index.html").resolve()
+    panel_html = resolve_panel_html()
     if args.dry_run:
         dry_run(state_dir)
         return
 
     asyncio.run(run_recorder(state_dir, panel_html))
+
+
+def resolve_panel_html():
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parent / "panel" / "index.html",
+        here.parents[2] / "panel" / "dist" / "index.html",
+        here.parents[2] / "panel" / "index.html",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return candidates[0].resolve()
 
 
 if __name__ == "__main__":

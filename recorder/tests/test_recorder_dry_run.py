@@ -1,6 +1,8 @@
 import json
 
 from recorder import dry_run
+from recorder import resolve_panel_html
+from runner import route_confirmed_target_ids
 
 
 def write_json(path, value):
@@ -82,3 +84,14 @@ def test_dry_run_empty_selected_routes_writes_done_without_indexing(tmp_path):
     assert state["totalRuntimeTargets"] == 0
     assert state["confirmedTotal"] == 0
     assert state["panelState"]["totalRuntimeTargets"] == 0
+
+
+def test_confirm_filters_detected_markers_to_current_route_targets():
+    route = {"targetIds": ["route-a", "route-b"]}
+
+    assert route_confirmed_target_ids(route, ["layout-x", "route-a", "route-b"]) == ["route-a", "route-b"]
+
+
+def test_resolve_panel_html_finds_repo_panel_dist():
+    assert resolve_panel_html().name == "index.html"
+    assert resolve_panel_html().exists()

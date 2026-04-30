@@ -92,3 +92,16 @@ def test_current_route_remaining_excludes_detected_and_confirmed_targets():
             "line": 8,
         }
     ]
+
+
+def test_confirmed_total_ignores_unknown_marker_ids():
+    state = compute_panel_state(
+        targets=TARGETS,
+        selected_routes=ROUTES,
+        current_route=ROUTES[0],
+        detected_target_ids=set(),
+        confirmed_target_ids={"src/A.tsx#Widget#L4#C10", "unknown#Widget#L1#C1"},
+    )
+
+    assert state["confirmedTotal"] == 1
+    assert state["routeChecklist"][0]["confirmedCount"] == 1

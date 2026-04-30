@@ -78,7 +78,8 @@ async def run_recorder(state_dir: Path, panel_html: Path):
 
             route = selected_routes[cur_idx]
             detected = await _read_marks(page_app)
-            confirmed_target_ids.update(detected)
+            confirmed = route_confirmed_target_ids(route, detected)
+            confirmed_target_ids.update(confirmed)
 
             baseline_version = manifest.get("baseline", {}).get("version", "unknown")
             ev_dir = state_dir / "runs" / f"baseline-{baseline_version}" / "pages" / route["routeId"]
@@ -93,7 +94,7 @@ async def run_recorder(state_dir: Path, panel_html: Path):
                     "url": page_app.url,
                     "routeId": route["routeId"],
                     "detectedTargetIds": detected,
-                    "confirmedTargetIds": detected,
+                    "confirmedTargetIds": confirmed,
                     "screenshot": "screenshot.png",
                     "reviewStatus": "visual-ok",
                 },
@@ -155,7 +156,15 @@ async def run_recorder(state_dir: Path, panel_html: Path):
 
 
 async def _read_marks(page):
-    return await page.evaluate("Array.from(window.__coverageMark__ || [])")
+    try:
+        return await page.evaluate("Array.from(window.__coverageMark__ || [])")
+    except Exception:
+        return []
+
+
+def route_confirmed_target_ids(route, detected_target_ids):
+    route_target_ids = set(route.get("targetIds", []))
+    return [target_id for target_id in detected_target_ids if target_id in route_target_ids]
 
 
 def _runtime_state_baseline(*, panel_state, route, current_url, remaining_routes_count):

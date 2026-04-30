@@ -72,7 +72,7 @@ node $SKILL_DIR/scripts/scan.js
 COVERAGE_MODE=1 BROWSER=none yarn start
 
 # 3. 起 recorder（自动开两窗口：业务页 + 面板）
-python $SKILL_DIR/scripts/recorder.py
+python3 $SKILL_DIR/scripts/recorder.py
 ```
 
 ## Resume 协议
