@@ -86,7 +86,17 @@ def write_route_evidence(
         "reviewStatus": _review_status(remaining_target_ids, force_confirm_reason, skipped),
     }
     atomic_write_json(route_dir / "coverage.json", coverage)
-    atomic_write_json(route_dir / "interaction-context.json", interaction_context or {"actions": []})
+    atomic_write_json(
+        route_dir / "interaction-context.json",
+        _build_interaction_context(
+            route=route,
+            route_note=route_note,
+            force_confirm_reason=force_confirm_reason,
+            target_contexts=target_contexts,
+            interaction_context=interaction_context,
+            trace_file=trace_file,
+        ),
+    )
     atomic_write_json(route_dir / "console.json", list(console_events or []))
     atomic_write_json(route_dir / "network.json", list(network_events or []))
     atomic_write_json(route_dir / "errors.json", list(error_events or []))
@@ -113,6 +123,36 @@ def _copy_trace(trace_file, target):
     if not src_path.exists():
         return
     shutil.copy2(src_path, target)
+
+
+def _build_interaction_context(
+    *,
+    route,
+    route_note,
+    force_confirm_reason,
+    target_contexts,
+    interaction_context,
+    trace_file,
+):
+    interaction = dict(interaction_context or {})
+    return {
+        "route": {
+            "routeId": route["routeId"],
+            "routePath": route.get("path", ""),
+            "url": route.get("url"),
+            "operatorNote": route_note,
+            "forceConfirmReason": force_confirm_reason,
+        },
+        "actions": list(interaction.get("actions") or []),
+        "targetContexts": dict(target_contexts or {}),
+        "artifacts": {
+            "coverage": "coverage.json",
+            "console": "console.json",
+            "network": "network.json",
+            "errors": "errors.json",
+            "trace": "trace.zip" if trace_file else None,
+        },
+    }
 
 
 def _review_status(remaining_target_ids, force_confirm_reason, skipped):

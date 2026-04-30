@@ -36,8 +36,8 @@ def test_write_route_evidence_writes_full_artifact_set(tmp_path):
             "firstSeenActionId": "a1",
             "firstSeenAtMs": 1500,
             "firstSeenUrl": "https://example.test/course-center",
-            "screenshot": str(screenshot),
-            "ariaSnapshot": str(aria),
+            "screenshot": "screenshots/a1.png",
+            "ariaSnapshot": "aria-snapshots/a1.yml",
         }
     }
 
@@ -56,6 +56,13 @@ def test_write_route_evidence_writes_full_artifact_set(tmp_path):
                     "endedAtMs": 1500,
                     "kind": "click",
                     "selector": "button.open",
+                    "summary": "Clicked button: Open modal",
+                    "selectorCandidates": ["role=button[name='Open modal']", "css=button.open"],
+                    "targetSnapshot": {"tag": "BUTTON", "role": "button", "text": "Open modal"},
+                    "newTargetIdsAfter": ["src/A.tsx#Modal#L8#C1"],
+                    "detectedTargetIdsAfter": ["src/A.tsx#Modal#L8#C1"],
+                    "screenshot": "screenshots/a1.png",
+                    "ariaSnapshot": "aria-snapshots/a1.yml",
                     "consoleEventIds": [],
                     "networkEventIds": [],
                     "errorEventIds": [],
@@ -81,7 +88,19 @@ def test_write_route_evidence_writes_full_artifact_set(tmp_path):
     assert coverage["trace"] == "trace.zip"
 
     interaction = json.loads((route_dir / "interaction-context.json").read_text(encoding="utf-8"))
+    assert interaction["route"]["routeId"] == "course-center"
+    assert interaction["route"]["url"] == "https://example.test/course-center"
+    assert interaction["route"]["operatorNote"] == "ok"
     assert interaction["actions"][0]["actionId"] == "a1"
+    assert interaction["actions"][0]["summary"] == "Clicked button: Open modal"
+    assert interaction["targetContexts"]["src/A.tsx#Modal#L8#C1"]["screenshot"] == "screenshots/a1.png"
+    assert interaction["artifacts"] == {
+        "coverage": "coverage.json",
+        "console": "console.json",
+        "network": "network.json",
+        "errors": "errors.json",
+        "trace": "trace.zip",
+    }
 
     console = json.loads((route_dir / "console.json").read_text(encoding="utf-8"))
     assert console[0]["id"] == "c1"

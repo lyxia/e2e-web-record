@@ -361,6 +361,8 @@ For every route in `after-runtime-plan.json`, dispatch one subagent (see
 `runs/after/routes/<routeId>/` only. The main agent reviews each
 `result.json`, records commits in `progress.json.items.afterRuntime.routes.<id>`,
 and (if any) closes out shared-component questions.
+Pass each route entry's `url` through unchanged; subagents must open that
+business URL exactly and must not replace it with localhost or the dev port.
 After-runtime evidence must include Playwright `trace.zip` and `video.webm`
 for each `initial/` and `final/` run.
 

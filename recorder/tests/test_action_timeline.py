@@ -38,6 +38,30 @@ def test_target_context_records_first_seen_action():
     assert context["ariaSnapshot"] == "aria-snapshots/a2.yml"
 
 
+def test_action_context_can_reference_target_artifacts_and_new_targets():
+    actions = [
+        {
+            "actionId": "a2",
+            "startedAtMs": 2000,
+            "endedAtMs": 2400,
+            "kind": "click",
+            "selectorCandidates": ["role=button[name='选择课件']", "text=选择课件"],
+            "targetSnapshot": {"tag": "BUTTON", "role": "button", "text": "选择课件"},
+            "newTargetIdsAfter": ["src/A.tsx#ModalForm#L8#C1"],
+            "detectedTargetIdsAfter": ["src/A.tsx#ModalForm#L8#C1"],
+            "screenshot": "screenshots/a2.png",
+            "ariaSnapshot": "aria-snapshots/a2.yml",
+        }
+    ]
+
+    assigned = assign_events_to_actions(actions, [], [], [])
+
+    assert assigned[0]["newTargetIdsAfter"] == ["src/A.tsx#ModalForm#L8#C1"]
+    assert assigned[0]["selectorCandidates"][0] == "role=button[name='选择课件']"
+    assert assigned[0]["targetSnapshot"]["text"] == "选择课件"
+    assert assigned[0]["screenshot"] == "screenshots/a2.png"
+
+
 def test_redact_input_value_keeps_kind_and_length_only():
     redacted = redact_input_value("password", "s3cret-token")
     assert "value" not in redacted

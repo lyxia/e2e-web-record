@@ -26,6 +26,53 @@ ACTION_LISTENER_SCRIPT = r"""
     if (el.classList && el.classList.length) return `${tag}.${Array.from(el.classList).slice(0, 2).join('.')}`;
     return tag;
   };
+  const cleanText = (value) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const actionElement = (target) => target && target.closest
+    ? (target.closest('button,a,[role="button"],[role="tab"],[role="menuitem"],input,textarea,[contenteditable="true"],.ant-select,.ant-picker') || target)
+    : target;
+  const nearbyLabel = (el) => {
+    const item = el && el.closest ? el.closest('.ant-form-item') : null;
+    const label = item && item.querySelector ? item.querySelector('.ant-form-item-label label') : null;
+    return cleanText(label && label.innerText);
+  };
+  const targetSnapshot = (el) => {
+    if (!el || el.nodeType !== 1) return {};
+    return {
+      tag: el.tagName,
+      role: el.getAttribute('role'),
+      text: cleanText(el.innerText || el.value),
+      ariaLabel: el.getAttribute('aria-label'),
+      title: el.getAttribute('title'),
+      placeholder: el.getAttribute('placeholder'),
+      testId: el.getAttribute('data-testid'),
+      labelText: nearbyLabel(el),
+    };
+  };
+  const selectorCandidates = (el, snapshot) => {
+    const candidates = [];
+    const name = snapshot.ariaLabel || snapshot.text || snapshot.placeholder || snapshot.title;
+    if (snapshot.role && name) candidates.push(`role=${snapshot.role}[name='${name}']`);
+    if (snapshot.tag === 'BUTTON' && name) candidates.push(`role=button[name='${name}']`);
+    if (snapshot.testId) candidates.push(`[data-testid='${snapshot.testId}']`);
+    if (name) candidates.push(`text=${name}`);
+    const css = cssPath(el);
+    if (css) candidates.push(`css=${css}`);
+    return Array.from(new Set(candidates)).slice(0, 5);
+  };
+  const describe = (kind, snapshot) => {
+    const label = snapshot.text || snapshot.ariaLabel || snapshot.placeholder || snapshot.labelText || snapshot.title || snapshot.testId || snapshot.tag || 'element';
+    return `${kind}: ${label}`;
+  };
+  const actionDetails = (kind, target) => {
+    const el = actionElement(target);
+    const snapshot = targetSnapshot(el);
+    return {
+      selector: cssPath(el),
+      selectorCandidates: selectorCandidates(el, snapshot),
+      targetSnapshot: snapshot,
+      summary: describe(kind, snapshot),
+    };
+  };
   const push = (kind, extra) => {
     const at = now();
     list.push({
@@ -37,11 +84,11 @@ ACTION_LISTENER_SCRIPT = r"""
       ...extra,
     });
   };
-  document.addEventListener('click', (event) => push('click', { selector: cssPath(event.target) }), true);
-  document.addEventListener('change', (event) => push('change', { selector: cssPath(event.target) }), true);
-  document.addEventListener('submit', (event) => push('submit', { selector: cssPath(event.target) }), true);
+  document.addEventListener('click', (event) => push('click', actionDetails('click', event.target)), true);
+  document.addEventListener('change', (event) => push('change', actionDetails('change', event.target)), true);
+  document.addEventListener('submit', (event) => push('submit', actionDetails('submit', event.target)), true);
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === 'Escape') push('key', { key: event.key });
+    if (event.key === 'Enter' || event.key === 'Escape') push('key', { key: event.key, ...actionDetails(`key ${event.key}`, event.target) });
   }, true);
   let inputTimer;
   document.addEventListener('input', (event) => {
@@ -49,7 +96,7 @@ ACTION_LISTENER_SCRIPT = r"""
     const target = event.target;
     inputTimer = setTimeout(() => {
       push('input', {
-        selector: cssPath(target),
+        ...actionDetails('input', target),
         valueKind: (target && target.type) || 'text',
         valueLength: ((target && target.value) || '').length,
       });
@@ -234,12 +281,13 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
             target.write_text(snapshot, encoding="utf-8")
             return target
 
-        async def _capture_target_context(target_id, latest_actions):
+        async def _capture_target_context(target_id, latest_actions, detected_target_ids_after=None):
             if not latest_actions:
                 return
             action = latest_actions[-1]
             action_id = action.get("actionId", f"unknown-{len(target_contexts)+1}")
             screenshot_path = artifact_dir / "screenshots" / f"{action_id}.png"
+            screenshot_rel = f"screenshots/{action_id}.png"
             screenshot_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 await page_app.screenshot(path=str(screenshot_path), full_page=False)
@@ -247,13 +295,20 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
             except Exception:
                 pass
             aria_path = await _read_aria_snapshot(action_id)
+            aria_rel = f"aria-snapshots/{action_id}.yml" if aria_path else ""
             if aria_path:
                 aria_snapshot_files.append(str(aria_path))
+            action["screenshot"] = screenshot_rel
+            action["ariaSnapshot"] = aria_rel
+            action["detectedTargetIdsAfter"] = list(detected_target_ids_after or [])
+            action.setdefault("newTargetIdsAfter", [])
+            if target_id not in action["newTargetIdsAfter"]:
+                action["newTargetIdsAfter"].append(target_id)
             target_contexts[target_id] = create_target_context(
                 target_id=target_id,
                 action=action,
-                screenshot=str(screenshot_path),
-                aria_snapshot=str(aria_path) if aria_path else "",
+                screenshot=screenshot_rel,
+                aria_snapshot=aria_rel,
             )
 
         async def _start_route_trace(route):
@@ -454,7 +509,7 @@ async def run_recorder(state_dir: Path, panel_html: Path, *, start_route_id: str
                     and target_id not in target_contexts
                 ]
                 for target_id in new_targets:
-                    await _capture_target_context(target_id, last_known_actions)
+                    await _capture_target_context(target_id, last_known_actions, marks)
 
                 route_seen_target_ids = merge_route_seen_target_ids(
                     route,

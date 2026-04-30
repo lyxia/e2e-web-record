@@ -57,23 +57,29 @@ The main agent gives you one entry from `after-runtime-plan.json`.
 ### Inputs
 
 - `routeId`: route identifier from the after-runtime plan.
+- `url`: exact business URL from the after-runtime plan. Open this URL as-is.
+  Do not replace its host with localhost, `127.0.0.1`, or the dev server port.
 - `expectedTargetIds`: list of target ids that were confirmed in baseline.
 - `baselineEvidenceDir`: `<stateDir>/runs/baseline-<version>/routes/<routeId>`.
 - `interactionContextPath`: `<baselineEvidenceDir>/interaction-context.json`.
 - `stateDir`: absolute path to the coverage state directory.
 - `routeDir`: `<stateDir>/runs/after/routes/<routeId>` — your output home.
 - `maxFixAttempts`: integer (e.g. 5).
-- `devServerUrl`: the base URL of the **after** project's dev server
-  (running with COVERAGE_MODE=1). The main agent has already started it; do
-  not start your own. Open routes through this URL (typically the
-  `runtime.baseUrl` from manifest, behind a proxy that points to the after
-  dev port).
+
+The main agent has already started the after project's dev server with
+`COVERAGE_MODE=1`; do not start your own. For qiankun/proxy applications, the
+local dev server is loaded through the business-domain container/proxy, so
+direct localhost/dev-port URLs are incomplete.
 
 ### Rules
 
-1. Read the baseline interaction context to understand the user journey.
-   You MAY change selector or path details when the after build legitimately
-   moved them; do not mechanically replay the baseline.
+1. Before opening the after URL, inspect the baseline evidence directory:
+   `coverage.json`, `interaction-context.json`, `errors.json`, screenshots,
+   aria snapshots, and `trace.zip` when present. Use
+   `interaction-context.json` as the primary user journey summary: actions,
+   selector candidates, target snapshots, first-seen target contexts, and
+   artifact paths. You MAY change selector or path details when the after
+   build legitimately moved them; do not mechanically replay the baseline.
 2. Pass criterion: every target in `expectedTargetIds` re-fires (visible in
    `window.__coverageMark__`), the route is functionally reachable, and there
    are no after-only blocking runtime errors (compare against
