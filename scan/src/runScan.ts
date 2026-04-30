@@ -216,7 +216,26 @@ function joinUrl(baseUrl: string | undefined, routePath: string): string {
     return routePath;
   }
 
-  return `${baseUrl.replace(/\/+$/, '')}/${routePath.replace(/^\/+/, '')}`;
+  const base = baseUrl.replace(/\/+$/, '');
+  const baseParts = base.split('/');
+  const routeParts = routePath.split('/');
+  let dropFromRoute = 0;
+
+  for (let take = Math.min(baseParts.length, routeParts.length); take > 0; take -= 1) {
+    const baseSuffix = baseParts.slice(baseParts.length - take).join('/');
+    const routePrefix = routeParts.slice(1, 1 + take).join('/');
+    if (baseSuffix && baseSuffix === routePrefix) {
+      dropFromRoute = take;
+      break;
+    }
+  }
+
+  if (dropFromRoute > 0) {
+    const remaining = `/${routeParts.slice(1 + dropFromRoute).join('/')}`;
+    return base + (remaining === '/' ? '' : remaining);
+  }
+
+  return `${base}/${routePath.replace(/^\/+/, '')}`;
 }
 
 function writeJson(file: string, value: unknown): void {

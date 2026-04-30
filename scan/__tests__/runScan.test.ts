@@ -107,4 +107,21 @@ describe('runScan', () => {
       }),
     ]);
   });
+
+  it('does not duplicate route prefix when baseUrl already includes it', () => {
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-output-'));
+
+    runScan({
+      projectRoot,
+      outDir,
+      baseUrl: 'https://scepter-sit-eu.x-peng.com/p1',
+      targetPackages: ['@example/ui'],
+    });
+
+    const checklist = readJson<any>(path.join(outDir, 'route-checklist.json'));
+    expect(checklist.selectedRoutes[0].url).toBe('https://scepter-sit-eu.x-peng.com/p1');
+
+    const pages = readJson<any>(path.join(outDir, 'pages.json'));
+    expect(pages.pages[0].resolvedUrl).toBe('https://scepter-sit-eu.x-peng.com/p1');
+  });
 });
