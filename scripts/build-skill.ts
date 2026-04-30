@@ -9,6 +9,9 @@ type PackageJson = {
 const rootDir = path.resolve(__dirname, "..");
 const skillDir = path.join(rootDir, "dist", "skills", "react-component-upgrade");
 const skillScriptsDir = path.join(skillDir, "scripts");
+const workflowDistDir = path.join(skillScriptsDir, "workflow");
+const recorderDistDir = path.join(skillScriptsDir, "recorder");
+const panelDistDir = path.join(skillScriptsDir, "panel");
 
 function run(command: string, args: string[]): void {
   const display = [command].concat(args).join(" ");
@@ -50,31 +53,60 @@ function renderSkillTemplate(): void {
   fs.writeFileSync(path.join(skillDir, "SKILL.md"), rendered);
 }
 
+function copySubagentPrompts(): void {
+  const promptsTemplate = path.join(rootDir, "skill-template", "subagent-prompts.md.tpl");
+  if (!fs.existsSync(promptsTemplate)) {
+    throw new Error("skill-template/subagent-prompts.md.tpl missing");
+  }
+  const text = fs.readFileSync(promptsTemplate, "utf8");
+  fs.writeFileSync(path.join(skillDir, "subagent-prompts.md"), text);
+}
+
+function buildWorkflowScripts(): void {
+  run("yarn", ["workspace", "scan", "build"]);
+  run("yarn", ["workspace", "workflow", "build"]);
+
+  const mappings: Array<[string, string]> = [
+    ["resume.js", "resume.js"],
+    ["run-scan.js", "scan.js"],
+    ["api-diff.js", "api-diff.js"],
+    ["after-runtime-plan.js", "after-runtime-plan.js"],
+    ["report.js", "report.js"],
+  ];
+  for (const [src, dst] of mappings) {
+    copyFile(
+      path.join(rootDir, "workflow", "dist", src),
+      path.join(workflowDistDir, dst)
+    );
+  }
+}
+
+function buildRecorderScripts(): void {
+  const recorderSrc = path.join(rootDir, "recorder", "src");
+  const files = ["recorder.py", "runner.py", "panel_state.py", "action_timeline.py", "evidence.py"];
+  for (const file of files) {
+    copyFile(path.join(recorderSrc, file), path.join(recorderDistDir, file));
+  }
+}
+
+function buildPanel(): void {
+  run("yarn", ["workspace", "panel", "build"]);
+  copyFile(
+    path.join(rootDir, "panel", "dist", "index.html"),
+    path.join(panelDistDir, "index.html")
+  );
+}
+
 function buildSkill(): void {
   fs.rmSync(skillDir, { recursive: true, force: true });
   fs.mkdirSync(skillScriptsDir, { recursive: true });
 
   run("yarn", ["workspace", "@odc/coverage-marker", "build"]);
-  run("yarn", ["workspace", "scan", "build"]);
-  copyFile(
-    path.join(rootDir, "scan", "dist", "scan.js"),
-    path.join(skillScriptsDir, "scan.js")
-  );
-
-  run("yarn", ["workspace", "panel", "build"]);
-  copyFile(
-    path.join(rootDir, "panel", "dist", "index.html"),
-    path.join(skillScriptsDir, "panel", "index.html")
-  );
-
-  ["recorder.py", "runner.py", "panel_state.py"].forEach((fileName) => {
-    copyFile(
-      path.join(rootDir, "recorder", "src", fileName),
-      path.join(skillScriptsDir, fileName)
-    );
-  });
-
+  buildWorkflowScripts();
+  buildPanel();
+  buildRecorderScripts();
   renderSkillTemplate();
+  copySubagentPrompts();
 }
 
 buildSkill();
