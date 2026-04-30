@@ -1,9 +1,11 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import { runScan } from '../src/runScan';
 
 const projectRoot = path.join(__dirname, 'fixtures', 'mini-app');
+const scanRoot = path.resolve(__dirname, '..');
 
 function readJson<T>(file: string): T {
   return JSON.parse(fs.readFileSync(file, 'utf8')) as T;
@@ -123,5 +125,57 @@ describe('runScan', () => {
 
     const pages = readJson<any>(path.join(outDir, 'pages.json'));
     expect(pages.pages[0].resolvedUrl).toBe('https://scepter-sit-eu.x-peng.com/p1');
+  });
+});
+
+describe('scan CLI', () => {
+  it('accepts explicit args without reading manifest or progress', () => {
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-cli-out-'));
+    execFileSync(
+      process.execPath,
+      [
+        '-r',
+        'ts-node/register',
+        path.join(scanRoot, 'src', 'index.ts'),
+        '--project-root',
+        projectRoot,
+        '--out-dir',
+        outDir,
+        '--base-url',
+        'http://x/',
+        '--target-package',
+        '@example/ui',
+      ],
+      { cwd: scanRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+
+    expect(fs.existsSync(path.join(outDir, 'coverage-targets.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'route-checklist.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'pages.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'progress.json'))).toBe(false);
+    expect(fs.existsSync(path.join(outDir, 'manifest.json'))).toBe(false);
+  });
+
+  it('supports comma-separated target packages', () => {
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-cli-multi-'));
+    execFileSync(
+      process.execPath,
+      [
+        '-r',
+        'ts-node/register',
+        path.join(scanRoot, 'src', 'index.ts'),
+        '--project-root',
+        projectRoot,
+        '--out-dir',
+        outDir,
+        '--base-url',
+        'http://x/',
+        '--target-packages',
+        '@example/ui,@example/legacy',
+      ],
+      { cwd: scanRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+
+    expect(fs.existsSync(path.join(outDir, 'coverage-targets.json'))).toBe(true);
   });
 });
