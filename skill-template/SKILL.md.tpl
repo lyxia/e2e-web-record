@@ -33,6 +33,23 @@ playwright install chromium
 
 `targetPackages` 必须为非空数组，babel-plugin / scan / craco loader 三处都从此读取。
 
+### 代理配置
+
+`baseUrl` 是 recorder 在浏览器里打开的业务 URL 前缀，应填写用户真实访问的域名和路径前缀，不要因为本地 dev server 在 `127.0.0.1` 就改成本地地址。
+
+`runtime.proxy` 是 Playwright 启动 Chromium 时使用的代理地址；如果业务域名需要通过 whistle/Charles/公司代理映射到本地 dev server，就填代理服务地址，例如：
+
+```json
+{
+  "baseUrl": "https://scepter-sit-eu.x-peng.com/main/smart-trains",
+  "runtime": {
+    "proxy": "http://127.0.0.1:8899"
+  }
+}
+```
+
+对应的 whistle 规则负责把业务资源映射到本地，例如把 `https://scepter-sit-eu.x-peng.com/microApp/...` 转到 `http://127.0.0.1:3033`。验证标准是：recorder 左侧业务窗口地址栏仍是业务域名，页面内容来自本地 dev server，并且 `window.__coverageMark__` 能返回当前路由触发的 target id。
+
 ## craco.config.js 接入
 
 ```js
