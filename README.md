@@ -113,20 +113,20 @@ baseline 版本是 1.1.42，升级后版本是当前分支。
 重点看失败路由、缺失 targets、截图、视频和 trace。
 ```
 
-## 使用时需要告诉 AI 什么
+## 启动时需要告诉 AI 什么
 
-第一次启动流程时，尽量在 prompt 里给齐这些信息：
+第一次启动流程时，不需要一次性把所有运行细节都写全。最小 prompt 只要说明：
 
-- 业务项目路径。
 - 目标组件库包名，例如 `@xxx/ui`。
-- baseline 版本、commit 或 tag。
-- 当前升级分支或升级后版本。
-- 业务访问入口 URL：recorder 打开的真实页面地址。
-- 本地启动方式，例如 `yarn start`、端口，以及把真实页面流量映射到本地代码的代理方式。
-- 登录态或 Playwright profile 是否已有。
-- Python 路径，以及这个 Python 对应的 Playwright package 路径。
+- 要升级到的版本，或当前分支就是升级后版本。
 
-AI 会根据这些信息创建或修正 `coverage-state/manifest.json`，然后按 skill 内部流程执行。
+例如：
+
+```text
+使用 react-component-upgrade skill，帮我验证 @xxx/ui 升级到 2.0.0 的覆盖情况。
+```
+
+后续 skill 会按阶段引导你补齐必要信息，例如 baseline 版本、业务访问 URL、本地启动方式、代理映射、登录态、Python/Playwright 路径等。AI 会根据这些回答创建或修正 `coverage-state/manifest.json`，然后按 skill 内部流程执行。
 
 ## 使用过程中你会看到什么
 
