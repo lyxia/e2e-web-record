@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage-state
+recorder/.venv
+__pycache__
+*.pyc
+.DS_Store
