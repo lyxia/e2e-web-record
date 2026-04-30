@@ -3,11 +3,12 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "build": "yarn build:resume && yarn build:run-scan && yarn build:api-diff && yarn build:after-runtime-plan && yarn build:report",
+    "build": "yarn build:resume && yarn build:run-scan && yarn build:api-diff && yarn build:after-runtime-plan && yarn build:after-runtime-quality-gate && yarn build:report",
     "build:resume": "esbuild src/resume.ts --bundle --platform=node --target=node16 --outfile=dist/resume.js",
     "build:run-scan": "esbuild src/run-scan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/run-scan.js",
     "build:api-diff": "esbuild src/api-diff-cli.ts --bundle --platform=node --target=node16 --outfile=dist/api-diff.js",
     "build:after-runtime-plan": "esbuild src/after-runtime-plan-cli.ts --bundle --platform=node --target=node16 --outfile=dist/after-runtime-plan.js",
+    "build:after-runtime-quality-gate": "esbuild src/after-runtime-quality-gate-cli.ts --bundle --platform=node --target=node16 --outfile=dist/after-runtime-quality-gate.js",
     "build:report": "esbuild src/report-cli.ts --bundle --platform=node --target=node16 --outfile=dist/report.js",
     "test": "jest"
   },

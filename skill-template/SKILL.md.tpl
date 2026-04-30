@@ -364,6 +364,17 @@ and (if any) closes out shared-component questions.
 After-runtime evidence must include Playwright `trace.zip` and `video.webm`
 for each `initial/` and `final/` run.
 
+Before accepting afterRuntime as complete, run the quality gate:
+
+```bash
+node $SKILL_DIR/scripts/workflow/after-runtime-quality-gate.js --state-dir coverage-state
+```
+
+The gate fails if a planned route is missing `result.json`, if passed results
+do not match `expectedTargetIds`, if final coverage does not confirm every
+expected target, or if any `initial/` / `final/` evidence is missing a valid
+`trace.zip` or readable `video.webm`.
+
 When every route in the plan is `passed` or accepted as `needs-decision`
 by the user, the main agent advances `progress.json`
 (`afterRuntime → report`) per the cheat sheet.

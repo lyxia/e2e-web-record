@@ -71,6 +71,7 @@ function buildWorkflowScripts(): void {
     ["run-scan.js", "scan.js"],
     ["api-diff.js", "api-diff.js"],
     ["after-runtime-plan.js", "after-runtime-plan.js"],
+    ["after-runtime-quality-gate.js", "after-runtime-quality-gate.js"],
     ["report.js", "report.js"],
   ];
   for (const [src, dst] of mappings) {
